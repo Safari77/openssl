@@ -9,12 +9,12 @@
  */
 
 #undef SECONDS
-#define SECONDS                 3
-#define RSA_SECONDS             10
-#define DSA_SECONDS             10
-#define ECDSA_SECONDS   10
-#define ECDH_SECONDS    10
-#define EdDSA_SECONDS   10
+#define SECONDS                 1
+#define RSA_SECONDS             1
+#define DSA_SECONDS             1
+#define ECDSA_SECONDS   1
+#define ECDH_SECONDS    1
+#define EdDSA_SECONDS   1
 
 #include <stdio.h>
 #include <stdlib.h>
