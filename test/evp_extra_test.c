@@ -301,7 +301,7 @@ static const unsigned char kExampleECPubKeyDER[] = {
 };
 
 /*
- * kExampleBadECKeyDER is a sample EC public key with a wrong OID
+ * kExampleBadECPubKeyDER is a sample EC public key with a wrong OID
  * 1.2.840.10045.2.2 instead of 1.2.840.10045.2.1 - EC Public Key
  */
 static const unsigned char kExampleBadECPubKeyDER[] = {
@@ -599,7 +599,7 @@ static int test_EVP_PKCS82PKEY(void)
 }
 #endif
 
-#ifndef OPENSSL_NO_SM2
+#if !defined(OPENSSL_NO_SM2) && !defined(FIPS_MODE)
 
 static int test_EVP_SM2_verify(void)
 {
@@ -1220,6 +1220,11 @@ static int test_EVP_MD_fetch(int tst)
     EVP_MD_meth_free(md);
     OSSL_PROVIDER_unload(defltprov);
     OSSL_PROVIDER_unload(fipsprov);
+    /* Not normally needed, but we would like to test that
+     * OPENSSL_thread_stop_ex() behaves as expected.
+     */
+    if (ctx != NULL)
+        OPENSSL_thread_stop_ex(ctx);
     OPENSSL_CTX_free(ctx);
     return ret;
 }
@@ -1233,7 +1238,7 @@ int setup_tests(void)
 #ifndef OPENSSL_NO_EC
     ADD_TEST(test_EVP_PKCS82PKEY);
 #endif
-#ifndef OPENSSL_NO_SM2
+#if !defined(OPENSSL_NO_SM2) && !defined(FIPS_MODE)
     ADD_TEST(test_EVP_SM2);
     ADD_TEST(test_EVP_SM2_verify);
 #endif

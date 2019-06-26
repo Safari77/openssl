@@ -17,6 +17,7 @@
 # include <openssl/symhacks.h>
 # include <openssl/bio.h>
 # include <openssl/evperr.h>
+# include <openssl/params.h>
 
 # define EVP_MAX_MD_SIZE                 64/* longest known is SHA512 */
 # define EVP_MAX_KEY_LENGTH              64
@@ -539,6 +540,8 @@ void BIO_set_md(BIO *, const EVP_MD *md);
 # define EVP_delete_digest_alias(alias) \
         OBJ_NAME_remove(alias,OBJ_NAME_TYPE_MD_METH|OBJ_NAME_ALIAS);
 
+int EVP_MD_CTX_set_params(EVP_MD_CTX *ctx, const OSSL_PARAM params[]);
+int EVP_MD_CTX_get_params(EVP_MD_CTX *ctx, OSSL_PARAM params[]);
 int EVP_MD_CTX_ctrl(EVP_MD_CTX *ctx, int cmd, int p1, void *p2);
 EVP_MD_CTX *EVP_MD_CTX_new(void);
 int EVP_MD_CTX_reset(EVP_MD_CTX *ctx);
@@ -1011,7 +1014,7 @@ void EVP_MD_do_all_sorted(void (*fn)
 EVP_MAC_CTX *EVP_MAC_CTX_new(const EVP_MAC *mac);
 EVP_MAC_CTX *EVP_MAC_CTX_new_id(int nid);
 void EVP_MAC_CTX_free(EVP_MAC_CTX *ctx);
-int EVP_MAC_CTX_copy(EVP_MAC_CTX *dest, const EVP_MAC_CTX *src);
+EVP_MAC_CTX *EVP_MAC_CTX_dup(const EVP_MAC_CTX *src);
 const EVP_MAC *EVP_MAC_CTX_mac(EVP_MAC_CTX *ctx);
 size_t EVP_MAC_size(EVP_MAC_CTX *ctx);
 int EVP_MAC_init(EVP_MAC_CTX *ctx);
@@ -1114,6 +1117,12 @@ EVP_PKEY *d2i_PrivateKey(int type, EVP_PKEY **a, const unsigned char **pp,
 EVP_PKEY *d2i_AutoPrivateKey(EVP_PKEY **a, const unsigned char **pp,
                              long length);
 int i2d_PrivateKey(const EVP_PKEY *a, unsigned char **pp);
+
+int i2d_KeyParams(const EVP_PKEY *a, unsigned char **pp);
+EVP_PKEY *d2i_KeyParams(int type, EVP_PKEY **a, const unsigned char **pp,
+                        long length);
+int i2d_KeyParams_bio(BIO *bp, const EVP_PKEY *pkey);
+EVP_PKEY *d2i_KeyParams_bio(int type, EVP_PKEY **a, BIO *in);
 
 int EVP_PKEY_copy_parameters(EVP_PKEY *to, const EVP_PKEY *from);
 int EVP_PKEY_missing_parameters(const EVP_PKEY *pkey);
