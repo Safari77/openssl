@@ -629,7 +629,7 @@ int tls_collect_extensions(SSL *s, PACKET *packet, unsigned int context,
                 && !((context & SSL_EXT_TLS1_2_SERVER_HELLO) != 0
                      && type == TLSEXT_TYPE_cryptopro_bug)
 #endif
-								) {
+                                                                ) {
             SSLfatal(s, SSL_AD_UNSUPPORTED_EXTENSION,
                      SSL_F_TLS_COLLECT_EXTENSIONS, SSL_R_UNSOLICITED_EXTENSION);
             goto err;
@@ -1645,9 +1645,9 @@ static int final_early_data(SSL *s, unsigned int context, int sent)
             || s->early_data_state != SSL_EARLY_DATA_ACCEPTING
             || !s->ext.early_data_ok
             || s->hello_retry_request != SSL_HRR_NONE
-            || (s->ctx->allow_early_data_cb != NULL
-                && !s->ctx->allow_early_data_cb(s,
-                                         s->ctx->allow_early_data_cb_data))) {
+            || (s->allow_early_data_cb != NULL
+                && !s->allow_early_data_cb(s,
+                                         s->allow_early_data_cb_data))) {
         s->ext.early_data = SSL_EARLY_DATA_REJECTED;
     } else {
         s->ext.early_data = SSL_EARLY_DATA_ACCEPTED;

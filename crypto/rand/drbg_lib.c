@@ -265,7 +265,7 @@ size_t rand_drbg_get_nonce(RAND_DRBG *drbg,
         return 0;
 
     memset(&data, 0, sizeof(data));
-    pool = rand_pool_new(0, min_len, max_len);
+    pool = rand_pool_new(0, 0, min_len, max_len);
     if (pool == NULL)
         return 0;
 
@@ -295,7 +295,7 @@ size_t rand_drbg_get_nonce(RAND_DRBG *drbg,
 void rand_drbg_cleanup_nonce(RAND_DRBG *drbg,
                              unsigned char *out, size_t outlen)
 {
-    OPENSSL_secure_clear_free(out, outlen);
+    OPENSSL_clear_free(out, outlen);
 }
 
 /*
@@ -546,7 +546,7 @@ int RAND_DRBG_instantiate(RAND_DRBG *drbg,
     /*
      * NIST SP800-90Ar1 section 9.1 says you can combine getting the entropy
      * and nonce in 1 call by increasing the entropy with 50% and increasing
-     * the minimum length to accomadate the length of the nonce.
+     * the minimum length to accommodate the length of the nonce.
      * We do this in case a nonce is require and get_nonce is NULL.
      */
     if (drbg->min_noncelen > 0 && drbg->get_nonce == NULL) {
@@ -909,7 +909,7 @@ int RAND_DRBG_bytes(RAND_DRBG *drbg, unsigned char *out, size_t outlen)
     if (drbg->adin_pool == NULL) {
         if (drbg->type == 0)
             goto err;
-        drbg->adin_pool = rand_pool_new(0, 0, drbg->max_adinlen);
+        drbg->adin_pool = rand_pool_new(0, 0, 0, drbg->max_adinlen);
         if (drbg->adin_pool == NULL)
             goto err;
     }

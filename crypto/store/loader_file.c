@@ -172,7 +172,7 @@ typedef OSSL_STORE_INFO *(*file_try_decode_fn)(const char *pem_name,
 typedef int (*file_eof_fn)(void *handler_ctx);
 /*
  * The destroy_ctx function is used to destroy the handler_ctx that was
- * intiated by a repeatable try_decode fuction.  This is only used when
+ * initiated by a repeatable try_decode function.  This is only used when
  * the handler is marked repeatable.
  */
 typedef void (*file_destroy_ctx_fn)(void **handler_ctx);
@@ -470,7 +470,7 @@ static FILE_HANDLER PrivateKey_handler = {
 };
 
 /*
- * Public key decoder.  Only supports SubjectPublicKeyInfo formated keys.
+ * Public key decoder.  Only supports SubjectPublicKeyInfo formatted keys.
  */
 static OSSL_STORE_INFO *try_decode_PUBKEY(const char *pem_name,
                                           const char *pem_header,
@@ -824,7 +824,7 @@ static OSSL_STORE_LOADER_CTX *file_open(const OSSL_STORE_LOADER *loader,
         }
 
         if (stat(path_data[i].path, &st) < 0) {
-            SYSerr(SYS_F_STAT, errno);
+            FUNCerr("stat", errno);
             ERR_add_error_data(1, path_data[i].path);
         } else {
             path = path_data[i].path;
