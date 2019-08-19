@@ -25,8 +25,8 @@
 
 static OSSL_OP_cipher_encrypt_init_fn gcm_einit;
 static OSSL_OP_cipher_decrypt_init_fn gcm_dinit;
-static OSSL_OP_cipher_ctx_get_params_fn gcm_ctx_get_params;
-static OSSL_OP_cipher_ctx_set_params_fn gcm_ctx_set_params;
+static OSSL_OP_cipher_get_ctx_params_fn gcm_get_ctx_params;
+static OSSL_OP_cipher_set_ctx_params_fn gcm_set_ctx_params;
 static OSSL_OP_cipher_cipher_fn gcm_cipher;
 static OSSL_OP_cipher_update_fn gcm_stream_update;
 static OSSL_OP_cipher_final_fn gcm_stream_final;
@@ -68,7 +68,7 @@ static int gcm_init(void *vctx, const unsigned char *key, size_t keylen,
 
     if (iv != NULL) {
         if (ivlen < ctx->ivlen_min || ivlen > sizeof(ctx->iv)) {
-            PROVerr(0, PROV_R_INVALID_IVLEN);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_IV_LENGTH);
             return 0;
         }
         ctx->ivlen = ivlen;
@@ -78,7 +78,7 @@ static int gcm_init(void *vctx, const unsigned char *key, size_t keylen,
 
     if (key != NULL) {
         if (keylen != ctx->keylen) {
-            PROVerr(0, PROV_R_INVALID_KEYLEN);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY_LENGTH);
             return 0;
         }
         return ctx->hw->setkey(ctx, key, ctx->keylen);
@@ -98,7 +98,7 @@ static int gcm_dinit(void *vctx, const unsigned char *key, size_t keylen,
     return gcm_init(vctx, key, keylen, iv, ivlen, 0);
 }
 
-static int gcm_ctx_get_params(void *vctx, OSSL_PARAM params[])
+static int gcm_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
     PROV_GCM_CTX *ctx = (PROV_GCM_CTX *)vctx;
     OSSL_PARAM *p;
@@ -111,7 +111,7 @@ static int gcm_ctx_get_params(void *vctx, OSSL_PARAM params[])
     }
     p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_KEYLEN);
     if (p != NULL && !OSSL_PARAM_set_int(p, ctx->keylen)) {
-        PROVerr(0, PROV_R_FAILED_TO_SET_PARAMETER);
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
         return 0;
     }
 
@@ -120,36 +120,36 @@ static int gcm_ctx_get_params(void *vctx, OSSL_PARAM params[])
         if (ctx->iv_gen != 1 && ctx->iv_gen_rand != 1)
             return 0;
         if (ctx->ivlen != (int)p->data_size) {
-            PROVerr(0, PROV_R_INVALID_IVLEN);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_IV_LENGTH);
             return 0;
         }
         if (!OSSL_PARAM_set_octet_string(p, ctx->iv, ctx->ivlen)) {
-            PROVerr(0, PROV_R_FAILED_TO_SET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
             return 0;
         }
     }
 
     p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_AEAD_TLS1_AAD_PAD);
     if (p != NULL && !OSSL_PARAM_set_size_t(p, ctx->tls_aad_pad_sz)) {
-        PROVerr(0, PROV_R_FAILED_TO_SET_PARAMETER);
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
         return 0;
     }
     p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_AEAD_TAG);
     if (p != NULL) {
         sz = p->data_size;
         if (sz == 0 || sz > EVP_GCM_TLS_TAG_LEN || !ctx->enc || ctx->taglen < 0) {
-            PROVerr(0, PROV_R_INVALID_TAG);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_TAG);
             return 0;
         }
         if (!OSSL_PARAM_set_octet_string(p, ctx->buf, sz)) {
-            PROVerr(0, PROV_R_FAILED_TO_SET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
             return 0;
         }
     }
     return 1;
 }
 
-static int gcm_ctx_set_params(void *vctx, const OSSL_PARAM params[])
+static int gcm_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_GCM_CTX *ctx = (PROV_GCM_CTX *)vctx;
     const OSSL_PARAM *p;
@@ -160,11 +160,11 @@ static int gcm_ctx_set_params(void *vctx, const OSSL_PARAM params[])
     if (p != NULL) {
         vp = ctx->buf;
         if (!OSSL_PARAM_get_octet_string(p, &vp, EVP_GCM_TLS_TAG_LEN, &sz)) {
-            PROVerr(0, PROV_R_FAILED_TO_GET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
         if (sz == 0 || ctx->enc) {
-            PROVerr(0, PROV_R_INVALID_TAG);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_TAG);
             return 0;
         }
         ctx->taglen = sz;
@@ -173,11 +173,11 @@ static int gcm_ctx_set_params(void *vctx, const OSSL_PARAM params[])
     p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_AEAD_IVLEN);
     if (p != NULL) {
         if (!OSSL_PARAM_get_size_t(p, &sz)) {
-            PROVerr(0, PROV_R_FAILED_TO_GET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
         if (sz == 0 || sz > sizeof(ctx->iv)) {
-            PROVerr(0, PROV_R_INVALID_IVLEN);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_IV_LENGTH);
             return 0;
         }
         ctx->ivlen = sz;
@@ -186,12 +186,12 @@ static int gcm_ctx_set_params(void *vctx, const OSSL_PARAM params[])
     p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_AEAD_TLS1_AAD);
     if (p != NULL) {
         if (p->data_type != OSSL_PARAM_OCTET_STRING) {
-            PROVerr(0, PROV_R_FAILED_TO_GET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
         sz = gcm_tls_init(ctx, p->data, p->data_size);
         if (sz == 0) {
-            PROVerr(0, PROV_R_INVALID_AAD);
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_AAD);
             return 0;
         }
         ctx->tls_aad_pad_sz = sz;
@@ -200,13 +200,32 @@ static int gcm_ctx_set_params(void *vctx, const OSSL_PARAM params[])
     p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_AEAD_TLS1_IV_FIXED);
     if (p != NULL) {
         if (p->data_type != OSSL_PARAM_OCTET_STRING) {
-            PROVerr(0, PROV_R_FAILED_TO_GET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
         if (gcm_tls_iv_set_fixed(ctx, p->data, p->data_size) == 0) {
-            PROVerr(0, PROV_R_FAILED_TO_GET_PARAMETER);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
+    }
+
+    /*
+     * TODO(3.0) Temporary solution to address fuzz test crash, which will be
+     * reworked once the discussion in PR #9510 is resolved. i.e- We need a
+     * general solution for handling missing parameters inside set_params and
+     * get_params methods.
+     */
+    p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_KEYLEN);
+    if (p != NULL) {
+        int keylen;
+
+        if (!OSSL_PARAM_get_int(p, &keylen)) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+            return 0;
+        }
+        /* The key length can not be modified for gcm mode */
+        if (keylen != (int)ctx->keylen)
+            return 0;
     }
 
     return 1;
@@ -219,12 +238,12 @@ static int gcm_stream_update(void *vctx, unsigned char *out, size_t *outl,
     PROV_GCM_CTX *ctx = (PROV_GCM_CTX *)vctx;
 
     if (outsize < inl) {
-        PROVerr(0, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
+        ERR_raise(ERR_LIB_PROV, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
         return -1;
     }
 
     if (gcm_cipher_internal(ctx, out, outl, in, inl) <= 0) {
-        PROVerr(0, PROV_R_CIPHER_OPERATION_FAILED);
+        ERR_raise(ERR_LIB_PROV, PROV_R_CIPHER_OPERATION_FAILED);
         return -1;
     }
     return 1;
@@ -251,7 +270,7 @@ static int gcm_cipher(void *vctx,
     PROV_GCM_CTX *ctx = (PROV_GCM_CTX *)vctx;
 
     if (outsize < inl) {
-        PROVerr(0, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
+        ERR_raise(ERR_LIB_PROV, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
         return -1;
     }
 
@@ -441,7 +460,7 @@ static int gcm_tls_cipher(PROV_GCM_CTX *ctx, unsigned char *out, size_t *padlen,
      * side only.
      */
     if (ctx->enc && ++ctx->tls_enc_records == 0) {
-        PROVerr(0, EVP_R_TOO_MANY_RECORDS);
+        ERR_raise(ERR_LIB_PROV, EVP_R_TOO_MANY_RECORDS);
         goto err;
     }
 
@@ -498,8 +517,8 @@ err:
     static OSSL_OP_cipher_get_params_fn alg##_##kbits##_##lcmode##_get_params; \
     static int alg##_##kbits##_##lcmode##_get_params(OSSL_PARAM params[])      \
     {                                                                          \
-        return aes_get_params(params, EVP_CIPH_##UCMODE##_MODE, flags,         \
-                               kbits, blkbits, ivbits);                        \
+        return cipher_default_get_params(params, EVP_CIPH_##UCMODE##_MODE,     \
+                                         flags, kbits, blkbits, ivbits);       \
     }                                                                          \
     static OSSL_OP_cipher_newctx_fn alg##kbits##gcm_newctx;                    \
     static void *alg##kbits##gcm_newctx(void *provctx)                         \
@@ -516,10 +535,16 @@ err:
         { OSSL_FUNC_CIPHER_FREECTX, (void (*)(void)) alg##_gcm_freectx },      \
         { OSSL_FUNC_CIPHER_GET_PARAMS,                                         \
             (void (*)(void)) alg##_##kbits##_##lcmode##_get_params },          \
-        { OSSL_FUNC_CIPHER_CTX_GET_PARAMS,                                     \
-            (void (*)(void))gcm_ctx_get_params },                              \
-        { OSSL_FUNC_CIPHER_CTX_SET_PARAMS,                                     \
-            (void (*)(void))gcm_ctx_set_params },                              \
+        { OSSL_FUNC_CIPHER_GET_CTX_PARAMS,                                     \
+            (void (*)(void))gcm_get_ctx_params },                              \
+        { OSSL_FUNC_CIPHER_SET_CTX_PARAMS,                                     \
+            (void (*)(void))gcm_set_ctx_params },                              \
+        { OSSL_FUNC_CIPHER_GETTABLE_PARAMS,                                    \
+                (void (*)(void))cipher_default_gettable_params },              \
+        { OSSL_FUNC_CIPHER_GETTABLE_CTX_PARAMS,                                \
+                (void (*)(void))cipher_aead_gettable_ctx_params },             \
+        { OSSL_FUNC_CIPHER_SETTABLE_CTX_PARAMS,                                \
+                (void (*)(void))cipher_aead_settable_ctx_params },             \
         { 0, NULL }                                                            \
     }
 

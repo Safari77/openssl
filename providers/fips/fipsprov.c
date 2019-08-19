@@ -19,6 +19,8 @@
 /* TODO(3.0): Needed for dummy_evp_call(). To be removed */
 #include <openssl/sha.h>
 #include <openssl/rand_drbg.h>
+#include <openssl/ec.h>
+#include <openssl/fips_names.h>
 
 #include "internal/cryptlib.h"
 #include "internal/property.h"
@@ -26,6 +28,7 @@
 #include "internal/provider_algs.h"
 #include "internal/provider_ctx.h"
 #include "internal/providercommon.h"
+#include "selftest.h"
 
 extern OSSL_core_thread_start_fn *c_thread_start;
 
@@ -35,8 +38,11 @@ extern OSSL_core_thread_start_fn *c_thread_start;
  * at the moment because c_put_error/c_add_error_vdata do not provide
  * us with the OPENSSL_CTX as a parameter.
  */
+
+static SELF_TEST_POST_PARAMS selftest_params;
+
 /* Functions provided by the core */
-static OSSL_core_get_param_types_fn *c_get_param_types;
+static OSSL_core_gettable_params_fn *c_gettable_params;
 static OSSL_core_get_params_fn *c_get_params;
 OSSL_core_thread_start_fn *c_thread_start;
 static OSSL_core_new_error_fn *c_new_error;
@@ -84,6 +90,31 @@ static const OSSL_PARAM fips_param_types[] = {
     OSSL_PARAM_END
 };
 
+/*
+ * Parameters to retrieve from the core provider - required for self testing.
+ * NOTE: inside core_get_params() these will be loaded from config items
+ * stored inside prov->parameters (except for OSSL_PROV_PARAM_MODULE_FILENAME).
+ */
+static OSSL_PARAM core_params[] =
+{
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_PARAM_MODULE_FILENAME,
+                        selftest_params.module_filename,
+                        sizeof(selftest_params.module_filename)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_MODULE_MAC,
+                        selftest_params.module_checksum_data,
+                        sizeof(selftest_params.module_checksum_data)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_INSTALL_MAC,
+                        selftest_params.indicator_checksum_data,
+                        sizeof(selftest_params.indicator_checksum_data)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_INSTALL_STATUS,
+                        selftest_params.indicator_data,
+                        sizeof(selftest_params.indicator_data)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_INSTALL_VERSION,
+                        selftest_params.indicator_version,
+                        sizeof(selftest_params.indicator_version)),
+    OSSL_PARAM_END
+};
+
 /* TODO(3.0): To be removed */
 static int dummy_evp_call(void *provctx)
 {
@@ -103,6 +134,9 @@ static int dummy_evp_call(void *provctx)
     BIGNUM *a = NULL, *b = NULL;
     unsigned char randbuf[128];
     RAND_DRBG *drbg = OPENSSL_CTX_get0_public_drbg(libctx);
+#ifndef OPENSSL_NO_EC
+    EC_KEY *key = NULL;
+#endif
 
     if (ctx == NULL || sha256 == NULL || drbg == NULL)
         goto err;
@@ -136,6 +170,16 @@ static int dummy_evp_call(void *provctx)
     if (!BN_rand_ex(a, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY, bnctx))
         goto err;
 
+#ifndef OPENSSL_NO_EC
+    /* Do some dummy EC calls */
+    key = EC_KEY_new_by_curve_name_ex(libctx, NID_X9_62_prime256v1);
+    if (key == NULL)
+        goto err;
+
+    if (!EC_KEY_generate_key(key))
+        goto err;
+#endif
+
     ret = 1;
  err:
     BN_CTX_end(bnctx);
@@ -143,10 +187,14 @@ static int dummy_evp_call(void *provctx)
 
     EVP_MD_CTX_free(ctx);
     EVP_MD_meth_free(sha256);
+
+#ifndef OPENSSL_NO_EC
+    EC_KEY_free(key);
+#endif
     return ret;
 }
 
-static const OSSL_PARAM *fips_get_param_types(const OSSL_PROVIDER *prov)
+static const OSSL_PARAM *fips_gettable_params(const OSSL_PROVIDER *prov)
 {
     return fips_param_types;
 }
@@ -234,8 +282,12 @@ static const OSSL_ALGORITHM fips_digests[] = {
     { "SHA3-256", "fips=yes", sha3_256_functions },
     { "SHA3-384", "fips=yes", sha3_384_functions },
     { "SHA3-512", "fips=yes", sha3_512_functions },
-    { "KMAC128", "fips=yes", keccak_kmac_128_functions },
-    { "KMAC256", "fips=yes", keccak_kmac_256_functions },
+    /*
+     * KECCAK_KMAC128 and KECCAK_KMAC256 as hashes are mostly useful for
+     * the KMAC128 and KMAC256.
+     */
+    { "KECCAK_KMAC128", "fips=yes", keccak_kmac_128_functions },
+    { "KECCAK_KMAC256", "fips=yes", keccak_kmac_256_functions },
 
     { NULL, NULL, NULL }
 };
@@ -256,6 +308,15 @@ static const OSSL_ALGORITHM fips_ciphers[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM fips_macs[] = {
+    { "CMAC", "fips=yes", cmac_functions },
+    { "GMAC", "fips=yes", gmac_functions },
+    { "HMAC", "fips=yes", hmac_functions },
+    { "KMAC128", "fips=yes", kmac128_functions },
+    { "KMAC256", "fips=yes", kmac256_functions },
+    { NULL, NULL, NULL }
+};
+
 static const OSSL_ALGORITHM *fips_query(OSSL_PROVIDER *prov,
                                          int operation_id,
                                          int *no_cache)
@@ -266,6 +327,8 @@ static const OSSL_ALGORITHM *fips_query(OSSL_PROVIDER *prov,
         return fips_digests;
     case OSSL_OP_CIPHER:
         return fips_ciphers;
+    case OSSL_OP_MAC:
+        return fips_macs;
     }
     return NULL;
 }
@@ -277,7 +340,7 @@ static const OSSL_DISPATCH fips_dispatch_table[] = {
      * use OPENSSL_CTX_free directly as our teardown function
      */
     { OSSL_FUNC_PROVIDER_TEARDOWN, (void (*)(void))OPENSSL_CTX_free },
-    { OSSL_FUNC_PROVIDER_GET_PARAM_TYPES, (void (*)(void))fips_get_param_types },
+    { OSSL_FUNC_PROVIDER_GETTABLE_PARAMS, (void (*)(void))fips_gettable_params },
     { OSSL_FUNC_PROVIDER_GET_PARAMS, (void (*)(void))fips_get_params },
     { OSSL_FUNC_PROVIDER_QUERY_OPERATION, (void (*)(void))fips_query },
     { 0, NULL }
@@ -300,8 +363,8 @@ int OSSL_provider_init(const OSSL_PROVIDER *provider,
 
     for (; in->function_id != 0; in++) {
         switch (in->function_id) {
-        case OSSL_FUNC_CORE_GET_PARAM_TYPES:
-            c_get_param_types = OSSL_get_core_get_param_types(in);
+        case OSSL_FUNC_CORE_GETTABLE_PARAMS:
+            c_gettable_params = OSSL_get_core_gettable_params(in);
             break;
         case OSSL_FUNC_CORE_GET_PARAMS:
             c_get_params = OSSL_get_core_get_params(in);
@@ -351,11 +414,26 @@ int OSSL_provider_init(const OSSL_PROVIDER *provider,
         case OSSL_FUNC_CRYPTO_SECURE_ALLOCATED:
             c_CRYPTO_secure_allocated = OSSL_get_CRYPTO_secure_allocated(in);
             break;
+        case OSSL_FUNC_BIO_NEW_FILE:
+            selftest_params.bio_new_file_cb = OSSL_get_BIO_new_file(in);
+            break;
+        case OSSL_FUNC_BIO_NEW_MEMBUF:
+            selftest_params.bio_new_buffer_cb = OSSL_get_BIO_new_membuf(in);
+            break;
+        case OSSL_FUNC_BIO_READ:
+            selftest_params.bio_read_cb = OSSL_get_BIO_read(in);
+            break;
+        case OSSL_FUNC_BIO_FREE:
+            selftest_params.bio_free_cb = OSSL_get_BIO_free(in);
+            break;
         default:
             /* Just ignore anything we don't understand */
             break;
         }
     }
+
+    if (!c_get_params(provider, core_params))
+        return 0;
 
     /*  Create a context. */
     if ((ctx = OPENSSL_CTX_new()) == NULL)

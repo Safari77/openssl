@@ -34,6 +34,11 @@ extern "C" {
  */
 #define OSSL_PROV_PARAM_BUILDINFO   "buildinfo"
 
+/*
+ * The module filename
+ * Type: OSSL_PARAM_OCTET_STRING
+ */
+#define OSSL_PROV_PARAM_MODULE_FILENAME "module-filename"
 
 /* cipher parameters */
 #define OSSL_CIPHER_PARAM_PADDING   "padding"    /* int */
@@ -55,6 +60,39 @@ extern "C" {
 #define OSSL_DIGEST_PARAM_SSL3_MS   "ssl3-ms"
 #define OSSL_DIGEST_PARAM_PAD_TYPE  "pad_type"
 #define OSSL_DIGEST_PARAM_MICALG    "micalg"
+#define OSSL_DIGEST_PARAM_BLOCK_SIZE "blocksize" /* OSSL_PARAM_INTEGER */
+#define OSSL_DIGEST_PARAM_SIZE      "size" /* OSSL_PARAM_INTEGER */
+#define OSSL_DIGEST_PARAM_FLAGS     "flags" /* OSSL_PARAM_UNSIGNED_INTEGER */
+
+/* Known DIGEST names (not a complete list) */
+#define OSSL_DIGEST_NAME_KECCAK_KMAC128 "KECCAK_KMAC128"
+#define OSSL_DIGEST_NAME_KECCAK_KMAC256 "KECCAK_KMAC256"
+
+/* MAC parameters */
+#define OSSL_MAC_PARAM_KEY          "key"       /* octet string */
+#define OSSL_MAC_PARAM_IV           "iv"        /* octet string */
+#define OSSL_MAC_PARAM_CUSTOM       "custom"    /* utf8 string */
+#define OSSL_MAC_PARAM_SALT         "salt"      /* octet string */
+#define OSSL_MAC_PARAM_XOF          "xof"       /* int, 0 or 1 */
+#define OSSL_MAC_PARAM_FLAGS        "flags"     /* int */
+/* Note that "md" and "digest" are equivalent */
+#define OSSL_MAC_PARAM_MD           "md"        /* utf8 string */
+#define OSSL_MAC_PARAM_DIGEST       "digest"    /* utf8 string */
+#define OSSL_MAC_PARAM_CIPHER       "cipher"    /* utf8 string */
+/* Note that "algorithm" can be used instead of "md", "digest" or "cipher" */
+#define OSSL_MAC_PARAM_ALGORITHM    "algorithm" /* utf8 string */
+#define OSSL_MAC_PARAM_ENGINE       "engine"    /* utf8 string */
+#define OSSL_MAC_PARAM_PROPERTIES   "properties" /* utf8 string */
+/* Note that "size", "digestsize" and "outlen" are equivalent */
+#define OSSL_MAC_PARAM_SIZE         "size"      /* size_t */
+#define OSSL_MAC_PARAM_DIGESTSIZE   "digestsize" /* size_t */
+#define OSSL_MAC_PARAM_OUTLEN       "outlen"    /* size_t */
+
+/* Known MAC names (not a complete list) */
+#define OSSL_MAC_NAME_CMAC          "CMAC"
+#define OSSL_MAC_NAME_HMAC          "HMAC"
+#define OSSL_MAC_NAME_KMAC128       "KMAC128"
+#define OSSL_MAC_NAME_KMAC256       "KMAC256"
 
 /* PKEY parameters */
 /* Diffie-Hellman Parameters */

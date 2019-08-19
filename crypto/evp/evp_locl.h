@@ -56,7 +56,7 @@ struct evp_cipher_ctx_st {
 } /* EVP_CIPHER_CTX */ ;
 
 struct evp_mac_ctx_st {
-    const EVP_MAC *meth;         /* Method structure */
+    EVP_MAC *meth;               /* Method structure */
     void *data;                  /* Individual method data */
 } /* EVP_MAC_CTX */;
 
@@ -170,6 +170,11 @@ int evp_do_ciph_ctx_getparams(const EVP_CIPHER *ciph, void *provctx,
                               OSSL_PARAM params[]);
 int evp_do_ciph_ctx_setparams(const EVP_CIPHER *ciph, void *provctx,
                               OSSL_PARAM params[]);
+int evp_do_md_getparams(const EVP_MD *md, OSSL_PARAM params[]);
+int evp_do_md_ctx_getparams(const EVP_MD *md, void *provctx,
+                            OSSL_PARAM params[]);
+int evp_do_md_ctx_setparams(const EVP_MD *md, void *provctx,
+                            OSSL_PARAM params[]);
 
 OSSL_PARAM *evp_pkey_to_param(EVP_PKEY *pkey, size_t *sz);
 
