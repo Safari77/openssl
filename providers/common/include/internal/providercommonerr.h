@@ -52,6 +52,7 @@ int ERR_load_PROV_strings(void);
 # define PROV_R_AES_KEY_SETUP_FAILED                      101
 # define PROV_R_BAD_DECRYPT                               100
 # define PROV_R_CIPHER_OPERATION_FAILED                   102
+# define PROV_R_FAILED_TO_GENERATE_KEY                    121
 # define PROV_R_FAILED_TO_GET_PARAMETER                   103
 # define PROV_R_FAILED_TO_SET_PARAMETER                   104
 # define PROV_R_INVALID_AAD                               108
