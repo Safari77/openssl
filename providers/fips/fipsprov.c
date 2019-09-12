@@ -15,6 +15,7 @@
 #include <openssl/params.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 
 /* TODO(3.0): Needed for dummy_evp_call(). To be removed */
 #include <openssl/sha.h>
@@ -121,6 +122,7 @@ static int dummy_evp_call(void *provctx)
     OPENSSL_CTX *libctx = PROV_LIBRARY_CONTEXT_OF(provctx);
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     EVP_MD *sha256 = EVP_MD_fetch(libctx, "SHA256", NULL);
+    EVP_KDF *kdf = EVP_KDF_fetch(libctx, OSSL_KDF_NAME_PBKDF2, NULL);
     char msg[] = "Hello World!";
     const unsigned char exptd[] = {
         0x7f, 0x83, 0xb1, 0x65, 0x7f, 0xf1, 0xfc, 0x53, 0xb9, 0x2d, 0xc1, 0x81,
@@ -138,7 +140,7 @@ static int dummy_evp_call(void *provctx)
     EC_KEY *key = NULL;
 #endif
 
-    if (ctx == NULL || sha256 == NULL || drbg == NULL)
+    if (ctx == NULL || sha256 == NULL || drbg == NULL || kdf == NULL)
         goto err;
 
     if (!EVP_DigestInit_ex(ctx, sha256, NULL))
@@ -185,8 +187,9 @@ static int dummy_evp_call(void *provctx)
     BN_CTX_end(bnctx);
     BN_CTX_free(bnctx);
 
+    EVP_KDF_free(kdf);
     EVP_MD_CTX_free(ctx);
-    EVP_MD_meth_free(sha256);
+    EVP_MD_free(sha256);
 
 #ifndef OPENSSL_NO_EC
     EC_KEY_free(key);
@@ -324,18 +327,30 @@ static const OSSL_ALGORITHM fips_ciphers[] = {
     { "id-aes256-CCM", "fips=yes", aes256ccm_functions },
     { "id-aes192-CCM", "fips=yes", aes192ccm_functions },
     { "id-aes128-CCM", "fips=yes", aes128ccm_functions },
+#ifndef OPENSSL_NO_DES
     { "DES-EDE3", "fips=yes", tdes_ede3_ecb_functions },
     { "DES-EDE3-CBC", "fips=yes", tdes_ede3_cbc_functions },
+#endif  /* OPENSSL_NO_DES */
     { NULL, NULL, NULL }
 };
 
 static const OSSL_ALGORITHM fips_macs[] = {
+#ifndef OPENSSL_NO_CMAC
     { "CMAC", "fips=yes", cmac_functions },
+#endif
     { "GMAC", "fips=yes", gmac_functions },
     { "HMAC", "fips=yes", hmac_functions },
     { "KMAC128", "fips=yes", kmac128_functions },
     { "KMAC256", "fips=yes", kmac256_functions },
     { NULL, NULL, NULL }
+};
+
+static const OSSL_ALGORITHM fips_kdfs[] = {
+    { OSSL_KDF_NAME_HKDF, "fips=yes", kdf_hkdf_functions },
+    { OSSL_KDF_NAME_SSKDF, "fips=yes", kdf_sskdf_functions },
+    { OSSL_KDF_NAME_PBKDF2, "fips=yes", kdf_pbkdf2_functions },
+    { OSSL_KDF_NAME_TLS1_PRF, "fips=yes", kdf_tls1_prf_functions },
+   { NULL, NULL, NULL }
 };
 
 static const OSSL_ALGORITHM *fips_query(OSSL_PROVIDER *prov,
@@ -350,6 +365,8 @@ static const OSSL_ALGORITHM *fips_query(OSSL_PROVIDER *prov,
         return fips_ciphers;
     case OSSL_OP_MAC:
         return fips_macs;
+    case OSSL_OP_KDF:
+        return fips_kdfs;
     }
     return NULL;
 }

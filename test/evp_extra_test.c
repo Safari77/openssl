@@ -19,6 +19,8 @@
 #include <openssl/pem.h>
 #include <openssl/kdf.h>
 #include <openssl/provider.h>
+#include <openssl/core_names.h>
+#include <openssl/dsa.h>
 #include "testutil.h"
 #include "internal/nelem.h"
 #include "internal/evp_int.h"
@@ -1154,8 +1156,8 @@ static int test_EVP_MD_fetch(int tst)
     if (!TEST_true(EVP_MD_up_ref(md)))
         goto err;
     /* Ref count should now be 2. Release both */
-    EVP_MD_meth_free(md);
-    EVP_MD_meth_free(md);
+    EVP_MD_free(md);
+    EVP_MD_free(md);
     md = NULL;
 
     /*
@@ -1174,7 +1176,7 @@ static int test_EVP_MD_fetch(int tst)
             goto err;
     }
 
-    EVP_MD_meth_free(md);
+    EVP_MD_free(md);
     md = NULL;
 
     /*
@@ -1195,7 +1197,7 @@ static int test_EVP_MD_fetch(int tst)
             goto err;
     }
 
-    EVP_MD_meth_free(md);
+    EVP_MD_free(md);
     md = NULL;
 
     /*
@@ -1217,7 +1219,7 @@ static int test_EVP_MD_fetch(int tst)
     ret = 1;
 
  err:
-    EVP_MD_meth_free(md);
+    EVP_MD_free(md);
     OSSL_PROVIDER_unload(defltprov);
     OSSL_PROVIDER_unload(fipsprov);
     /* Not normally needed, but we would like to test that
@@ -1239,10 +1241,13 @@ static int encrypt_decrypt(const EVP_CIPHER *cipher, const unsigned char *msg,
 
     memset(key, 0, sizeof(key));
     if (!TEST_ptr(ctx = EVP_CIPHER_CTX_new())
+            || !TEST_int_eq(EVP_CIPHER_CTX_tag_length(ctx), 0)
             || !TEST_true(EVP_CipherInit_ex(ctx, cipher, NULL, key, NULL, 1))
+            || !TEST_int_eq(EVP_CIPHER_CTX_tag_length(ctx), 0)
             || !TEST_true(EVP_CipherUpdate(ctx, ct, &ctlen, msg, len))
             || !TEST_true(EVP_CipherFinal_ex(ctx, ct, &ctlen))
             || !TEST_true(EVP_CipherInit_ex(ctx, cipher, NULL, key, NULL, 0))
+            || !TEST_int_eq(EVP_CIPHER_CTX_tag_length(ctx), 0)
             || !TEST_true(EVP_CipherUpdate(ctx, pt, &ptlen, ct, ctlen))
             || !TEST_true(EVP_CipherFinal_ex(ctx, pt, &ptlen))
             || !TEST_mem_eq(pt, ptlen, msg, len))
@@ -1317,8 +1322,8 @@ static int test_EVP_CIPHER_fetch(int tst)
     if (!TEST_true(EVP_CIPHER_up_ref(cipher)))
         goto err;
     /* Ref count should now be 2. Release both */
-    EVP_CIPHER_meth_free(cipher);
-    EVP_CIPHER_meth_free(cipher);
+    EVP_CIPHER_free(cipher);
+    EVP_CIPHER_free(cipher);
     cipher = NULL;
 
     /*
@@ -1336,7 +1341,7 @@ static int test_EVP_CIPHER_fetch(int tst)
             goto err;
     }
 
-    EVP_CIPHER_meth_free(cipher);
+    EVP_CIPHER_free(cipher);
     cipher = NULL;
 
     /*
@@ -1355,7 +1360,7 @@ static int test_EVP_CIPHER_fetch(int tst)
             goto err;
     }
 
-    EVP_CIPHER_meth_free(cipher);
+    EVP_CIPHER_free(cipher);
     cipher = NULL;
 
     /*
@@ -1381,7 +1386,7 @@ static int test_EVP_CIPHER_fetch(int tst)
     ret = 1;
 
  err:
-    EVP_CIPHER_meth_free(cipher);
+    EVP_CIPHER_free(cipher);
     OSSL_PROVIDER_unload(defltprov);
     OSSL_PROVIDER_unload(fipsprov);
     /* Not normally needed, but we would like to test that
@@ -1392,6 +1397,119 @@ static int test_EVP_CIPHER_fetch(int tst)
     OPENSSL_CTX_free(ctx);
     return ret;
 }
+
+#ifndef OPENSSL_NO_DSA
+/* Test getting and setting parameters on an EVP_PKEY_CTX */
+static int test_EVP_PKEY_CTX_get_set_params(void)
+{
+    EVP_PKEY_CTX *ctx = NULL;
+    EVP_SIGNATURE *dsaimpl = NULL;
+    const OSSL_PARAM *params;
+    OSSL_PARAM ourparams[2], *param = ourparams;
+    DSA *dsa = NULL;
+    BIGNUM *p = NULL, *q = NULL, *g = NULL;
+    EVP_PKEY *pkey = NULL;
+    int ret = 0;
+    const EVP_MD *md;
+    size_t mdsize = SHA512_DIGEST_LENGTH;
+
+    /*
+     * Setup the parameters for our DSA object. For our purposes they don't have
+     * to actually be *valid* parameters. We just need to set something. We
+     * don't even need a pub_key/priv_key.
+     */
+    dsa = DSA_new();
+    p = BN_new();
+    q = BN_new();
+    g = BN_new();
+    if (!TEST_ptr(dsa)
+            || !TEST_ptr(p)
+            || !TEST_ptr(q)
+            || !TEST_ptr(g)
+            || !DSA_set0_pqg(dsa, p, q, g))
+        goto err;
+    p = q = g = NULL;
+
+    pkey = EVP_PKEY_new();
+    if (!TEST_ptr(pkey)
+            || !TEST_true(EVP_PKEY_assign_DSA(pkey, dsa)))
+        goto err;
+
+    dsa = NULL;
+
+    /* Initialise a sign operation */
+    ctx = EVP_PKEY_CTX_new(pkey, NULL);
+    dsaimpl = EVP_SIGNATURE_fetch(NULL, "DSA", NULL);
+    if (!TEST_ptr(ctx)
+            || !TEST_ptr(dsaimpl)
+            || !TEST_int_gt(EVP_PKEY_sign_init_ex(ctx, dsaimpl), 0))
+        goto err;
+
+    /*
+     * We should be able to query the parameters now. The default DSA
+     * implementation supports exactly one parameter - so we expect to see that
+     * returned and no more.
+     */
+    params = EVP_PKEY_CTX_settable_params(ctx);
+    if (!TEST_ptr(params)
+            || !TEST_int_eq(strcmp(params[0].key,
+                            OSSL_SIGNATURE_PARAM_DIGEST_SIZE), 0)
+            || !TEST_int_eq(strcmp(params[1].key, OSSL_SIGNATURE_PARAM_DIGEST),
+                            0)
+               /* The final key should be NULL */
+            || !TEST_ptr_null(params[2].key))
+        goto err;
+
+    /* Gettable params are the same as the settable ones */
+    params = EVP_PKEY_CTX_gettable_params(ctx);
+    if (!TEST_ptr(params)
+            || !TEST_int_eq(strcmp(params[0].key,
+                            OSSL_SIGNATURE_PARAM_DIGEST_SIZE), 0)
+            || !TEST_int_eq(strcmp(params[1].key, OSSL_SIGNATURE_PARAM_DIGEST),
+                            0)
+               /* The final key should be NULL */
+            || !TEST_ptr_null(params[2].key))
+        goto err;
+
+    /*
+     * Test getting and setting params via EVP_PKEY_CTX_set_params() and
+     * EVP_PKEY_CTX_get_params()
+     */
+    *param++ = OSSL_PARAM_construct_size_t(OSSL_SIGNATURE_PARAM_DIGEST_SIZE,
+                                           &mdsize);
+    *param++ = OSSL_PARAM_construct_end();
+
+    if (!TEST_true(EVP_PKEY_CTX_set_params(ctx, ourparams)))
+        goto err;
+
+    mdsize = 0;
+    if (!TEST_true(EVP_PKEY_CTX_get_params(ctx, ourparams))
+            || !TEST_size_t_eq(mdsize, SHA512_DIGEST_LENGTH))
+        goto err;
+
+    /*
+     * Test the TEST_PKEY_CTX_set_signature_md() and
+     * TEST_PKEY_CTX_get_signature_md() functions
+     */
+    if (!TEST_int_gt(EVP_PKEY_CTX_set_signature_md(ctx, EVP_sha256()), 0)
+            || !TEST_int_gt(EVP_PKEY_CTX_get_signature_md(ctx, &md), 0)
+            || !TEST_ptr_eq(md, EVP_sha256()))
+        goto err;
+
+    ret = 1;
+
+ err:
+    EVP_PKEY_CTX_free(ctx);
+    EVP_SIGNATURE_free(dsaimpl);
+    EVP_PKEY_free(pkey);
+    DSA_free(dsa);
+    BN_free(p);
+    BN_free(q);
+    BN_free(g);
+
+    return ret;
+}
+#endif
 
 int setup_tests(void)
 {
@@ -1428,6 +1546,9 @@ int setup_tests(void)
 #else
     ADD_ALL_TESTS(test_EVP_MD_fetch, 5);
     ADD_ALL_TESTS(test_EVP_CIPHER_fetch, 5);
+#endif
+#ifndef OPENSSL_NO_DSA
+    ADD_TEST(test_EVP_PKEY_CTX_get_set_params);
 #endif
     return 1;
 }

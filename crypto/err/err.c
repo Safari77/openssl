@@ -64,7 +64,6 @@ static ERR_STRING_DATA ERR_str_libraries[] = {
     {ERR_PACK(ERR_LIB_HMAC, 0, 0), "HMAC routines"},
     {ERR_PACK(ERR_LIB_CT, 0, 0), "CT routines"},
     {ERR_PACK(ERR_LIB_ASYNC, 0, 0), "ASYNC routines"},
-    {ERR_PACK(ERR_LIB_KDF, 0, 0), "KDF routines"},
     {ERR_PACK(ERR_LIB_OSSL_STORE, 0, 0), "STORE routines"},
     {ERR_PACK(ERR_LIB_SM2, 0, 0), "SM2 routines"},
     {ERR_PACK(ERR_LIB_ESS, 0, 0), "ESS routines"},
@@ -127,8 +126,8 @@ static LHASH_OF(ERR_STRING_DATA) *int_error_hash = NULL;
 static int int_err_library_number = ERR_LIB_USER;
 
 static unsigned long get_error_values(int inc, int top, const char **file,
-                                      int *line, const char **data,
-                                      int *flags);
+                                      int *line, const char **func,
+                                      const char **data, int *flags);
 
 static unsigned long err_string_data_hash(const ERR_STRING_DATA *a)
 {
@@ -372,55 +371,112 @@ void ERR_clear_error(void)
 
 unsigned long ERR_get_error(void)
 {
-    return get_error_values(1, 0, NULL, NULL, NULL, NULL);
+    return get_error_values(1, 0, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_get_error_line(const char **file, int *line)
 {
-    return get_error_values(1, 0, file, line, NULL, NULL);
+    return get_error_values(1, 0, file, line, NULL, NULL, NULL);
 }
 
+unsigned long ERR_get_error_func(const char **func)
+{
+    return get_error_values(1, 0, NULL, NULL, func, NULL, NULL);
+}
+
+unsigned long ERR_get_error_data(const char **data, int *flags)
+{
+    return get_error_values(1, 0, NULL, NULL, NULL, data, flags);
+}
+
+unsigned long ERR_get_error_all(const char **file, int *line,
+                                const char **func,
+                                const char **data, int *flags)
+{
+    return get_error_values(1, 0, file, line, func, data, flags);
+}
+
+#if !OPENSSL_API_3
 unsigned long ERR_get_error_line_data(const char **file, int *line,
                                       const char **data, int *flags)
 {
-    return get_error_values(1, 0, file, line, data, flags);
+    return get_error_values(1, 0, file, line, NULL, data, flags);
 }
+#endif
 
 unsigned long ERR_peek_error(void)
 {
-    return get_error_values(0, 0, NULL, NULL, NULL, NULL);
+    return get_error_values(0, 0, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_error_line(const char **file, int *line)
 {
-    return get_error_values(0, 0, file, line, NULL, NULL);
+    return get_error_values(0, 0, file, line, NULL, NULL, NULL);
 }
 
+unsigned long ERR_peek_error_func(const char **func)
+{
+    return get_error_values(0, 0, NULL, NULL, func, NULL, NULL);
+}
+
+unsigned long ERR_peek_error_data(const char **data, int *flags)
+{
+    return get_error_values(0, 0, NULL, NULL, NULL, data, flags);
+}
+
+unsigned long ERR_peek_error_all(const char **file, int *line,
+                                 const char **func,
+                                 const char **data, int *flags)
+{
+    return get_error_values(0, 0, file, line, func, data, flags);
+}
+
+#if !OPENSSL_API_3
 unsigned long ERR_peek_error_line_data(const char **file, int *line,
                                        const char **data, int *flags)
 {
-    return get_error_values(0, 0, file, line, data, flags);
+    return get_error_values(0, 0, file, line, NULL, data, flags);
 }
+#endif
 
 unsigned long ERR_peek_last_error(void)
 {
-    return get_error_values(0, 1, NULL, NULL, NULL, NULL);
+    return get_error_values(0, 1, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_last_error_line(const char **file, int *line)
 {
-    return get_error_values(0, 1, file, line, NULL, NULL);
+    return get_error_values(0, 1, file, line, NULL, NULL, NULL);
 }
 
+unsigned long ERR_peek_last_error_func(const char **func)
+{
+    return get_error_values(0, 1, NULL, NULL, func, NULL, NULL);
+}
+
+unsigned long ERR_peek_last_error_data(const char **data, int *flags)
+{
+    return get_error_values(0, 1, NULL, NULL, NULL, data, flags);
+}
+
+unsigned long ERR_peek_last_error_all(const char **file, int *line,
+                                      const char **func,
+                                      const char **data, int *flags)
+{
+    return get_error_values(0, 1, file, line, func, data, flags);
+}
+
+#if !OPENSSL_API_3
 unsigned long ERR_peek_last_error_line_data(const char **file, int *line,
                                             const char **data, int *flags)
 {
-    return get_error_values(0, 1, file, line, data, flags);
+    return get_error_values(0, 1, file, line, NULL, data, flags);
 }
+#endif
 
 static unsigned long get_error_values(int inc, int top, const char **file,
-                                      int *line, const char **data,
-                                      int *flags)
+                                      int *line, const char **func,
+                                      const char **data, int *flags)
 {
     int i = 0;
     ERR_STATE *es;
@@ -431,13 +487,15 @@ static unsigned long get_error_values(int inc, int top, const char **file,
         return 0;
 
     if (inc && top) {
-        if (file)
+        if (file != NULL)
             *file = "";
-        if (line)
+        if (line != NULL)
             *line = 0;
-        if (data)
+        if (func != NULL)
+            *func = "";
+        if (data != NULL)
             *data = "";
-        if (flags)
+        if (flags != NULL)
             *flags = 0;
 
         return ERR_R_INTERNAL_ERROR;
@@ -480,6 +538,12 @@ static unsigned long get_error_values(int inc, int top, const char **file,
             *file = es->err_file[i];
             *line = es->err_line[i];
         }
+    }
+
+    if (func != NULL) {
+        *func = es->err_func[i];
+        if (*func == NULL)
+            *func = "N/A";
     }
 
     if (data == NULL) {
@@ -559,12 +623,12 @@ const char *ERR_lib_error_string(unsigned long e)
     return ((p == NULL) ? NULL : p->string);
 }
 
+#if !OPENSSL_API_3
 const char *ERR_func_error_string(unsigned long e)
 {
-    if (!RUN_ONCE(&err_string_init, do_err_strings_init))
-        return NULL;
-    return ERR_GET_LIB(e) == ERR_LIB_SYS ? "system library" : NULL;
+    return NULL;
 }
+#endif
 
 const char *ERR_reason_error_string(unsigned long e)
 {
@@ -790,7 +854,7 @@ void ERR_add_error_vdata(int num, va_list args)
     }
     len = strlen(str);
 
-    for (len = 0; --num >= 0; ) {
+    while (--num >= 0) {
         arg = va_arg(args, char *);
         if (arg == NULL)
             arg = "<NULL>";

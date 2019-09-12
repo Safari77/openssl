@@ -173,6 +173,7 @@ static const OSSL_ALGORITHM deflt_ciphers[] = {
     { "CAMELLIA-192-CTR", "default=yes", camellia192ctr_functions },
     { "CAMELLIA-128-CTR", "default=yes", camellia128ctr_functions },
 #endif /* OPENSSL_NO_CAMELLIA */
+#ifndef OPENSSL_NO_DES
     { "DES-EDE3", "default=yes", tdes_ede3_ecb_functions },
     { "DES-EDE3-CBC", "default=yes", tdes_ede3_cbc_functions },
     { "DES-EDE3-OFB", "default=yes", tdes_ede3_ofb_functions },
@@ -185,6 +186,7 @@ static const OSSL_ALGORITHM deflt_ciphers[] = {
     { "DES-EDE-CFB", "default=yes", tdes_ede2_cfb_functions },
     { "DESX-CBC", "default=yes", tdes_desx_cbc_functions },
     { "id-smime-alg-CMS3DESwrap", "default=yes", tdes_wrap_cbc_functions },
+#endif /* OPENSSL_NO_DES */
     { NULL, NULL, NULL }
 };
 
@@ -209,6 +211,22 @@ static const OSSL_ALGORITHM deflt_macs[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM deflt_kdfs[] = {
+    { OSSL_KDF_NAME_HKDF, "default=yes", kdf_hkdf_functions },
+    { OSSL_KDF_NAME_SSKDF, "default=yes", kdf_sskdf_functions },
+    { OSSL_KDF_NAME_PBKDF2, "default=yes", kdf_pbkdf2_functions },
+    { OSSL_KDF_NAME_SSHKDF, "default=yes", kdf_sshkdf_functions },
+    { OSSL_KDF_NAME_X963KDF, "default=yes", kdf_x963_kdf_functions },
+    { OSSL_KDF_NAME_TLS1_PRF, "default=yes", kdf_tls1_prf_functions },
+#ifndef OPENSSL_NO_CMS
+    { OSSL_KDF_NAME_X942KDF, "default=yes", kdf_x942_kdf_functions },
+#endif
+#ifndef OPENSSL_NO_SCRYPT
+    { OSSL_KDF_NAME_SCRYPT, "default=yes", kdf_scrypt_functions },
+#endif
+   { NULL, NULL, NULL }
+};
+
 static const OSSL_ALGORITHM deflt_keyexch[] = {
 #ifndef OPENSSL_NO_DH
     { "dhKeyAgreement", "default=yes", dh_keyexch_functions },
@@ -216,9 +234,20 @@ static const OSSL_ALGORITHM deflt_keyexch[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM deflt_signature[] = {
+#ifndef OPENSSL_NO_DSA
+    { "DSA", "default=yes", dsa_signature_functions },
+#endif
+    { NULL, NULL, NULL }
+};
+
+
 static const OSSL_ALGORITHM deflt_keymgmt[] = {
 #ifndef OPENSSL_NO_DH
     { "dhKeyAgreement", "default=yes", dh_keymgmt_functions },
+#endif
+#ifndef OPENSSL_NO_DSA
+    { "DSA", "default=yes", dsa_keymgmt_functions },
 #endif
     { NULL, NULL, NULL }
 };
@@ -235,10 +264,14 @@ static const OSSL_ALGORITHM *deflt_query(OSSL_PROVIDER *prov,
         return deflt_ciphers;
     case OSSL_OP_MAC:
         return deflt_macs;
+    case OSSL_OP_KDF:
+        return deflt_kdfs;
     case OSSL_OP_KEYMGMT:
         return deflt_keymgmt;
     case OSSL_OP_KEYEXCH:
         return deflt_keyexch;
+    case OSSL_OP_SIGNATURE:
+        return deflt_signature;
     }
     return NULL;
 }
