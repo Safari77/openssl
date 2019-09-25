@@ -43,19 +43,19 @@ typedef struct {
  * implementation used.  If a provider cannot be found, it falls back to trying
  * non-provider based implementations.
  */
-int ossl_prov_cipher_load_from_params(PROV_CIPHER *pd,
+int ossl_prov_cipher_load_from_params(PROV_CIPHER *pc,
                                       const OSSL_PARAM params[],
                                       OPENSSL_CTX *ctx);
 
 /* Reset the PROV_CIPHER fields and free any allocated cipher reference */
-void ossl_prov_cipher_reset(PROV_CIPHER *pd);
+void ossl_prov_cipher_reset(PROV_CIPHER *pc);
 
 /* Clone a PROV_CIPHER structure into a second */
 int ossl_prov_cipher_copy(PROV_CIPHER *dst, const PROV_CIPHER *src);
 
 /* Query the cipher and associated engine (if any) */
-const EVP_CIPHER *ossl_prov_cipher_cipher(const PROV_CIPHER *pd);
-ENGINE *ossl_prov_cipher_engine(const PROV_CIPHER *pd);
+const EVP_CIPHER *ossl_prov_cipher_cipher(const PROV_CIPHER *pc);
+ENGINE *ossl_prov_cipher_engine(const PROV_CIPHER *pc);
 
 /* Digest functions */
 /*
@@ -77,3 +77,27 @@ int ossl_prov_digest_copy(PROV_DIGEST *dst, const PROV_DIGEST *src);
 /* Query the digest and associated engine (if any) */
 const EVP_MD *ossl_prov_digest_md(const PROV_DIGEST *pd);
 ENGINE *ossl_prov_digest_engine(const PROV_DIGEST *pd);
+
+/* MAC functions */
+/*
+ * Load an EVP_MAC_CTX* from the specified parameters with the specified
+ * library context.
+ * The params "mac" and "properties" are used to determine the implementation
+ * used, and the parameters "digest", "cipher", "engine" and "properties" are
+ * passed to the MAC via the created MAC context if they are given.
+ * If there is already a created MAC context, it will be replaced if the "mac"
+ * parameter is found, otherwise it will simply be used as is, and passed the
+ * parameters to pilfer as it sees fit.
+ *
+ * As an option, a MAC name may be explicitly given, and if it is, the "mac"
+ * parameter will be ignored.
+ * Similarly, as an option, a cipher name or a digest name may be explicitly
+ * given, and if any of them is, the "digest" and "cipher" parameters are
+ * ignored.
+ */
+int ossl_prov_macctx_load_from_params(EVP_MAC_CTX **macctx,
+                                      const OSSL_PARAM params[],
+                                      const char *macname,
+                                      const char *ciphername,
+                                      const char *mdname,
+                                      OPENSSL_CTX *ctx);

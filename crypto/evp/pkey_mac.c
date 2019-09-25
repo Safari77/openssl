@@ -221,8 +221,8 @@ static int pkey_mac_signctx_init(EVP_PKEY_CTX *ctx, EVP_MD_CTX *mctx)
         && (ctx->pmeth->flags & EVP_PKEY_FLAG_SIGCTX_CUSTOM) != 0;
 
     if (set_key) {
-        if (strcmp(OBJ_nid2sn(EVP_PKEY_id(EVP_PKEY_CTX_get0_pkey(ctx))),
-                   EVP_MAC_name(EVP_MAC_CTX_mac(hctx->ctx))) != 0)
+        if (!EVP_MAC_is_a(EVP_MAC_CTX_mac(hctx->ctx),
+                          OBJ_nid2sn(EVP_PKEY_id(EVP_PKEY_CTX_get0_pkey(ctx)))))
             return 0;
         key = EVP_PKEY_get0(EVP_PKEY_CTX_get0_pkey(ctx));
         if (key == NULL)
@@ -278,8 +278,7 @@ static int pkey_mac_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
                 char *engineid = (char *)ENGINE_get_id(ctx->engine);
 
                 params[params_n++] =
-                    OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_ENGINE,
-                                                     engineid, 0);
+                    OSSL_PARAM_construct_utf8_string("engine", engineid, 0);
 #endif
                 params[params_n++] =
                     OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_CIPHER,
@@ -400,11 +399,9 @@ static int pkey_mac_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2)
                 char *engineid = ctx->engine == NULL
                     ? NULL : (char *)ENGINE_get_id(ctx->engine);
 
-                if (engineid != NULL) {
+                if (engineid != NULL)
                     params[params_n++] =
-                        OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_ENGINE,
-                                                         engineid, 0);
-                }
+                        OSSL_PARAM_construct_utf8_string("engine", engineid, 0);
 #endif
                 params[params_n++] =
                     OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,

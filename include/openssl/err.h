@@ -38,11 +38,12 @@ extern "C" {
 # define ERR_TXT_MALLOCED        0x01
 # define ERR_TXT_STRING          0x02
 
-# define ERR_FLAG_MARK           0x01
-# define ERR_FLAG_CLEAR          0x02
+# if !OPENSSL_API_3 || defined(OSSL_FORCE_ERR_STATE)
+#  define ERR_FLAG_MARK           0x01
+#  define ERR_FLAG_CLEAR          0x02
 
-# define ERR_NUM_ERRORS  16
-typedef struct err_state_st {
+#  define ERR_NUM_ERRORS  16
+struct err_state_st {
     int err_flags[ERR_NUM_ERRORS];
     unsigned long err_buffer[ERR_NUM_ERRORS];
     char *err_data[ERR_NUM_ERRORS];
@@ -52,7 +53,8 @@ typedef struct err_state_st {
     int err_line[ERR_NUM_ERRORS];
     const char *err_func[ERR_NUM_ERRORS];
     int top, bottom;
-} ERR_STATE;
+};
+# endif
 
 /* library */
 # define ERR_LIB_NONE            1
@@ -106,48 +108,49 @@ typedef struct err_state_st {
 
 # define ERR_LIB_USER            128
 
-# if ! OPENSSL_API_3
-#  define SYSerr(f,r)  ERR_raise(ERR_LIB_SYS,(r))
+# if 1 || !OPENSSL_API_3
+#  define ASN1err(f, r) ERR_raise_data(ERR_LIB_ASN1, (r), NULL)
+#  define ASYNCerr(f, r) ERR_raise_data(ERR_LIB_ASYNC, (r), NULL)
+#  define BIOerr(f, r) ERR_raise_data(ERR_LIB_BIO, (r), NULL)
+#  define BNerr(f, r)  ERR_raise_data(ERR_LIB_BN, (r), NULL)
+#  define BUFerr(f, r) ERR_raise_data(ERR_LIB_BUF, (r), NULL)
+#  define CMPerr(f, r) ERR_raise_data(ERR_LIB_CMP, (r), NULL)
+#  define CMSerr(f, r) ERR_raise_data(ERR_LIB_CMS, (r), NULL)
+#  define COMPerr(f, r) ERR_raise_data(ERR_LIB_COMP, (r), NULL)
+#  define CONFerr(f, r) ERR_raise_data(ERR_LIB_CONF, (r), NULL)
+#  define CRMFerr(f, r) ERR_raise_data(ERR_LIB_CRMF, (r), NULL)
+#  define CRYPTOerr(f, r) ERR_raise_data(ERR_LIB_CRYPTO, (r), NULL)
+#  define CTerr(f, r) ERR_raise_data(ERR_LIB_CT, (r), NULL)
+#  define DHerr(f, r)  ERR_raise_data(ERR_LIB_DH, (r), NULL)
+#  define DSAerr(f, r) ERR_raise_data(ERR_LIB_DSA, (r), NULL)
+#  define DSOerr(f, r) ERR_raise_data(ERR_LIB_DSO, (r), NULL)
+#  define ECDHerr(f, r) ERR_raise_data(ERR_LIB_ECDH, (r), NULL)
+#  define ECDSAerr(f, r) ERR_raise_data(ERR_LIB_ECDSA, (r), NULL)
+#  define ECerr(f, r)  ERR_raise_data(ERR_LIB_EC, (r), NULL)
+#  define ENGINEerr(f, r) ERR_raise_data(ERR_LIB_ENGINE, (r), NULL)
+#  define ESSerr(f, r) ERR_raise_data(ERR_LIB_ESS, (r), NULL)
+#  define EVPerr(f, r) ERR_raise_data(ERR_LIB_EVP, (r), NULL)
+#  define FIPSerr(f, r) ERR_raise_data(ERR_LIB_FIPS, (r), NULL)
+#  define HMACerr(f, r) ERR_raise_data(ERR_LIB_HMAC, (r), NULL)
+#  define KDFerr(f, r) ERR_raise_data(ERR_LIB_KDF, (r), NULL)
+#  define OBJerr(f, r) ERR_raise_data(ERR_LIB_OBJ, (r), NULL)
+#  define OCSPerr(f, r) ERR_raise_data(ERR_LIB_OCSP, (r), NULL)
+#  define OSSL_STOREerr(f, r) ERR_raise_data(ERR_LIB_OSSL_STORE, (r), NULL)
+#  define PEMerr(f, r) ERR_raise_data(ERR_LIB_PEM, (r), NULL)
+#  define PKCS12err(f, r) ERR_raise_data(ERR_LIB_PKCS12, (r), NULL)
+#  define PKCS7err(f, r) ERR_raise_data(ERR_LIB_PKCS7, (r), NULL)
+#  define PROPerr(f, r) ERR_raise_data(ERR_LIB_PROP, (r), NULL)
+#  define PROVerr(f, r) ERR_raise_data(ERR_LIB_PROV, (r), NULL)
+#  define RANDerr(f, r) ERR_raise_data(ERR_LIB_RAND, (r), NULL)
+#  define RSAerr(f, r) ERR_raise_data(ERR_LIB_RSA, (r), NULL)
+#  define SM2err(f, r) ERR_raise_data(ERR_LIB_SM2, (r), NULL)
+#  define SSLerr(f, r) ERR_raise_data(ERR_LIB_SSL, (r), NULL)
+#  define SYSerr(f, r) ERR_raise_data(ERR_LIB_SYS, (r), NULL)
+#  define TSerr(f, r) ERR_raise_data(ERR_LIB_TS, (r), NULL)
+#  define UIerr(f, r) ERR_raise_data(ERR_LIB_UI, (r), NULL)
+#  define X509V3err(f, r) ERR_raise_data(ERR_LIB_X509V3, (r), NULL)
+#  define X509err(f, r) ERR_raise_data(ERR_LIB_X509, (r), NULL)
 # endif
-# define BNerr(f,r)   ERR_raise(ERR_LIB_BN,(r))
-# define RSAerr(f,r)  ERR_raise(ERR_LIB_RSA,(r))
-# define DHerr(f,r)   ERR_raise(ERR_LIB_DH,(r))
-# define EVPerr(f,r)  ERR_raise(ERR_LIB_EVP,(r))
-# define BUFerr(f,r)  ERR_raise(ERR_LIB_BUF,(r))
-# define OBJerr(f,r)  ERR_raise(ERR_LIB_OBJ,(r))
-# define PEMerr(f,r)  ERR_raise(ERR_LIB_PEM,(r))
-# define DSAerr(f,r)  ERR_raise(ERR_LIB_DSA,(r))
-# define X509err(f,r) ERR_raise(ERR_LIB_X509,(r))
-# define ASN1err(f,r) ERR_raise(ERR_LIB_ASN1,(r))
-# define CONFerr(f,r) ERR_raise(ERR_LIB_CONF,(r))
-# define CRYPTOerr(f,r) ERR_raise(ERR_LIB_CRYPTO,(r))
-# define ECerr(f,r)   ERR_raise(ERR_LIB_EC,(r))
-# define SSLerr(f,r)  ERR_raise(ERR_LIB_SSL,(r))
-# define BIOerr(f,r)  ERR_raise(ERR_LIB_BIO,(r))
-# define PKCS7err(f,r) ERR_raise(ERR_LIB_PKCS7,(r))
-# define X509V3err(f,r) ERR_raise(ERR_LIB_X509V3,(r))
-# define PKCS12err(f,r) ERR_raise(ERR_LIB_PKCS12,(r))
-# define RANDerr(f,r) ERR_raise(ERR_LIB_RAND,(r))
-# define DSOerr(f,r) ERR_raise(ERR_LIB_DSO,(r))
-# define ENGINEerr(f,r) ERR_raise(ERR_LIB_ENGINE,(r))
-# define OCSPerr(f,r) ERR_raise(ERR_LIB_OCSP,(r))
-# define UIerr(f,r) ERR_raise(ERR_LIB_UI,(r))
-# define COMPerr(f,r) ERR_raise(ERR_LIB_COMP,(r))
-# define ECDSAerr(f,r)  ERR_raise(ERR_LIB_ECDSA,(r))
-# define ECDHerr(f,r)  ERR_raise(ERR_LIB_ECDH,(r))
-# define OSSL_STOREerr(f,r) ERR_raise(ERR_LIB_OSSL_STORE,(r))
-# define FIPSerr(f,r) ERR_raise(ERR_LIB_FIPS,(r))
-# define CMSerr(f,r) ERR_raise(ERR_LIB_CMS,(r))
-# define CRMFerr(f,r) ERR_raise(ERR_LIB_CRMF,(r))
-# define CMPerr(f,r) ERR_raise(ERR_LIB_CMP,(r))
-# define TSerr(f,r) ERR_raise(ERR_LIB_TS,(r))
-# define HMACerr(f,r) ERR_raise(ERR_LIB_HMAC,(r))
-# define CTerr(f,r) ERR_raise(ERR_LIB_CT,(r))
-# define ASYNCerr(f,r) ERR_raise(ERR_LIB_ASYNC,(r))
-# define SM2err(f,r) ERR_raise(ERR_LIB_SM2,(r))
-# define ESSerr(f,r) ERR_raise(ERR_LIB_ESS,(r))
-# define PROPerr(f,r) ERR_raise(ERR_LIB_PROP,(r))
-# define PROVerr(f,r) ERR_raise(ERR_LIB_PROV,(r))
 
 # define ERR_PACK(l,f,r) ( \
         (((unsigned int)(l) & 0x0FF) << 24L) | \
@@ -331,7 +334,7 @@ int ERR_load_ERR_strings(void);
 
 DEPRECATEDIN_1_1_0(void ERR_remove_thread_state(void *))
 DEPRECATEDIN_1_0_0(void ERR_remove_state(unsigned long pid))
-ERR_STATE *ERR_get_state(void);
+DEPRECATEDIN_3(ERR_STATE *ERR_get_state(void))
 
 int ERR_get_next_error_library(void);
 

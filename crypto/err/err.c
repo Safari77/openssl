@@ -7,6 +7,9 @@
  * https://www.openssl.org/source/license.html
  */
 
+/* TODO: When ERR_STATE becomes opaque, this musts be removed */
+#define OSSL_FORCE_ERR_STATE
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -23,6 +26,9 @@
 #include "internal/constant_time_locl.h"
 #include "e_os.h"
 #include "err_locl.h"
+
+/* Forward declaration in case it's not published because of configuration */
+ERR_STATE *ERR_get_state(void);
 
 static int err_load_strings(const ERR_STRING_DATA *str);
 
@@ -125,9 +131,14 @@ static ERR_STRING_DATA *int_err_get_item(const ERR_STRING_DATA *);
 static LHASH_OF(ERR_STRING_DATA) *int_error_hash = NULL;
 static int int_err_library_number = ERR_LIB_USER;
 
-static unsigned long get_error_values(int inc, int top, const char **file,
-                                      int *line, const char **func,
-                                      const char **data, int *flags);
+typedef enum ERR_GET_ACTION_e {
+    EV_POP, EV_PEEK, EV_PEEK_LAST
+} ERR_GET_ACTION;
+
+static unsigned long get_error_values(ERR_GET_ACTION g,
+                                      const char **file, int *line,
+                                      const char **func, const char **data,
+                                      int *flags);
 
 static unsigned long err_string_data_hash(const ERR_STRING_DATA *a)
 {
@@ -359,7 +370,7 @@ void ERR_clear_error(void)
     int i;
     ERR_STATE *es;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return;
 
@@ -371,136 +382,126 @@ void ERR_clear_error(void)
 
 unsigned long ERR_get_error(void)
 {
-    return get_error_values(1, 0, NULL, NULL, NULL, NULL, NULL);
+    return get_error_values(EV_POP, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_get_error_line(const char **file, int *line)
 {
-    return get_error_values(1, 0, file, line, NULL, NULL, NULL);
+    return get_error_values(EV_POP, file, line, NULL, NULL, NULL);
 }
 
 unsigned long ERR_get_error_func(const char **func)
 {
-    return get_error_values(1, 0, NULL, NULL, func, NULL, NULL);
+    return get_error_values(EV_POP, NULL, NULL, func, NULL, NULL);
 }
 
 unsigned long ERR_get_error_data(const char **data, int *flags)
 {
-    return get_error_values(1, 0, NULL, NULL, NULL, data, flags);
+    return get_error_values(EV_POP, NULL, NULL, NULL, data, flags);
 }
 
 unsigned long ERR_get_error_all(const char **file, int *line,
                                 const char **func,
                                 const char **data, int *flags)
 {
-    return get_error_values(1, 0, file, line, func, data, flags);
+    return get_error_values(EV_POP, file, line, func, data, flags);
 }
 
 #if !OPENSSL_API_3
 unsigned long ERR_get_error_line_data(const char **file, int *line,
                                       const char **data, int *flags)
 {
-    return get_error_values(1, 0, file, line, NULL, data, flags);
+    return get_error_values(EV_POP, file, line, NULL, data, flags);
 }
 #endif
 
 unsigned long ERR_peek_error(void)
 {
-    return get_error_values(0, 0, NULL, NULL, NULL, NULL, NULL);
+    return get_error_values(EV_PEEK, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_error_line(const char **file, int *line)
 {
-    return get_error_values(0, 0, file, line, NULL, NULL, NULL);
+    return get_error_values(EV_PEEK, file, line, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_error_func(const char **func)
 {
-    return get_error_values(0, 0, NULL, NULL, func, NULL, NULL);
+    return get_error_values(EV_PEEK, NULL, NULL, func, NULL, NULL);
 }
 
 unsigned long ERR_peek_error_data(const char **data, int *flags)
 {
-    return get_error_values(0, 0, NULL, NULL, NULL, data, flags);
+    return get_error_values(EV_PEEK, NULL, NULL, NULL, data, flags);
 }
 
 unsigned long ERR_peek_error_all(const char **file, int *line,
                                  const char **func,
                                  const char **data, int *flags)
 {
-    return get_error_values(0, 0, file, line, func, data, flags);
+    return get_error_values(EV_PEEK, file, line, func, data, flags);
 }
 
 #if !OPENSSL_API_3
 unsigned long ERR_peek_error_line_data(const char **file, int *line,
                                        const char **data, int *flags)
 {
-    return get_error_values(0, 0, file, line, NULL, data, flags);
+    return get_error_values(EV_PEEK, file, line, NULL, data, flags);
 }
 #endif
 
 unsigned long ERR_peek_last_error(void)
 {
-    return get_error_values(0, 1, NULL, NULL, NULL, NULL, NULL);
+    return get_error_values(EV_PEEK_LAST, NULL, NULL, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_last_error_line(const char **file, int *line)
 {
-    return get_error_values(0, 1, file, line, NULL, NULL, NULL);
+    return get_error_values(EV_PEEK_LAST, file, line, NULL, NULL, NULL);
 }
 
 unsigned long ERR_peek_last_error_func(const char **func)
 {
-    return get_error_values(0, 1, NULL, NULL, func, NULL, NULL);
+    return get_error_values(EV_PEEK_LAST, NULL, NULL, func, NULL, NULL);
 }
 
 unsigned long ERR_peek_last_error_data(const char **data, int *flags)
 {
-    return get_error_values(0, 1, NULL, NULL, NULL, data, flags);
+    return get_error_values(EV_PEEK_LAST, NULL, NULL, NULL, data, flags);
 }
 
 unsigned long ERR_peek_last_error_all(const char **file, int *line,
                                       const char **func,
                                       const char **data, int *flags)
 {
-    return get_error_values(0, 1, file, line, func, data, flags);
+    return get_error_values(EV_PEEK_LAST, file, line, func, data, flags);
 }
 
 #if !OPENSSL_API_3
 unsigned long ERR_peek_last_error_line_data(const char **file, int *line,
                                             const char **data, int *flags)
 {
-    return get_error_values(0, 1, file, line, NULL, data, flags);
+    return get_error_values(EV_PEEK_LAST, file, line, NULL, data, flags);
 }
 #endif
 
-static unsigned long get_error_values(int inc, int top, const char **file,
-                                      int *line, const char **func,
+static unsigned long get_error_values(ERR_GET_ACTION g,
+                                      const char **file, int *line,
+                                      const char **func,
                                       const char **data, int *flags)
 {
     int i = 0;
     ERR_STATE *es;
     unsigned long ret;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return 0;
 
-    if (inc && top) {
-        if (file != NULL)
-            *file = "";
-        if (line != NULL)
-            *line = 0;
-        if (func != NULL)
-            *func = "";
-        if (data != NULL)
-            *data = "";
-        if (flags != NULL)
-            *flags = 0;
-
-        return ERR_R_INTERNAL_ERROR;
-    }
-
+    /*
+     * Clear anything that should have been cleared earlier. We do this
+     * here because this doesn't have constant-time issues.
+     */
     while (es->bottom != es->top) {
         if (es->err_flags[es->top] & ERR_FLAG_CLEAR) {
             err_clear(es, es->top, 0);
@@ -516,16 +517,18 @@ static unsigned long get_error_values(int inc, int top, const char **file,
         break;
     }
 
+    /* If everything has been cleared, the stack is empty. */
     if (es->bottom == es->top)
         return 0;
 
-    if (top)
-        i = es->top;            /* last error */
+    /* Which error, the top of stack (latest one) or the first one? */
+    if (g == EV_PEEK_LAST)
+        i = es->top;
     else
-        i = (es->bottom + 1) % ERR_NUM_ERRORS; /* first error */
+        i = (es->bottom + 1) % ERR_NUM_ERRORS;
 
     ret = es->err_buffer[i];
-    if (inc) {
+    if (g == EV_POP) {
         es->bottom = i;
         es->err_buffer[i] = 0;
     }
@@ -547,7 +550,7 @@ static unsigned long get_error_values(int inc, int top, const char **file,
     }
 
     if (data == NULL) {
-        if (inc) {
+        if (g == EV_POP) {
             err_clear_data(es, i, 0);
         }
     } else {
@@ -679,7 +682,7 @@ DEFINE_RUN_ONCE_STATIC(err_do_init)
     return CRYPTO_THREAD_init_local(&err_thread_local, NULL);
 }
 
-ERR_STATE *ERR_get_state(void)
+ERR_STATE *err_get_state_int(void)
 {
     ERR_STATE *state;
     int saveerrno = get_last_sys_error();
@@ -717,6 +720,14 @@ ERR_STATE *ERR_get_state(void)
     set_sys_error(saveerrno);
     return state;
 }
+
+#if !OPENSSL_API_3
+ERR_STATE *ERR_get_state(void)
+{
+    return err_get_state_int();
+}
+#endif
+
 
 /*
  * err_shelve_state returns the current thread local error state
@@ -780,7 +791,7 @@ static int err_set_error_data_int(char *data, size_t size, int flags,
 {
     ERR_STATE *es;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return 0;
 
@@ -825,7 +836,7 @@ void ERR_add_error_vdata(int num, va_list args)
     ERR_STATE *es;
 
     /* Get the current error data; if an allocated string get it. */
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return;
     i = es->top;
@@ -880,7 +891,7 @@ int ERR_set_mark(void)
 {
     ERR_STATE *es;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return 0;
 
@@ -894,7 +905,7 @@ int ERR_pop_to_mark(void)
 {
     ERR_STATE *es;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return 0;
 
@@ -915,7 +926,7 @@ int ERR_clear_last_mark(void)
     ERR_STATE *es;
     int top;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return 0;
 
@@ -936,7 +947,7 @@ void err_clear_last_constant_time(int clear)
     ERR_STATE *es;
     int top;
 
-    es = ERR_get_state();
+    es = err_get_state_int();
     if (es == NULL)
         return;
 
