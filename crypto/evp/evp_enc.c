@@ -17,9 +17,9 @@
 #include <openssl/engine.h>
 #include <openssl/params.h>
 #include <openssl/core_names.h>
-#include "internal/evp_int.h"
+#include "crypto/evp.h"
 #include "internal/provider.h"
-#include "evp_locl.h"
+#include "evp_local.h"
 
 int EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx)
 {
@@ -1181,14 +1181,14 @@ const OSSL_PARAM *EVP_CIPHER_gettable_params(const EVP_CIPHER *cipher)
     return NULL;
 }
 
-const OSSL_PARAM *EVP_CIPHER_CTX_settable_params(const EVP_CIPHER *cipher)
+const OSSL_PARAM *EVP_CIPHER_settable_ctx_params(const EVP_CIPHER *cipher)
 {
     if (cipher != NULL && cipher->settable_ctx_params != NULL)
         return cipher->settable_ctx_params();
     return NULL;
 }
 
-const OSSL_PARAM *EVP_CIPHER_CTX_gettable_params(const EVP_CIPHER *cipher)
+const OSSL_PARAM *EVP_CIPHER_gettable_ctx_params(const EVP_CIPHER *cipher)
 {
     if (cipher != NULL && cipher->gettable_ctx_params != NULL)
         return cipher->gettable_ctx_params();

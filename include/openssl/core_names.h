@@ -7,8 +7,8 @@
  * https://www.openssl.org/source/license.html
  */
 
-#ifndef OSSL_CORE_NAMES_H
-# define OSSL_CORE_NAMES_H
+#ifndef OPENSSL_CORE_NAMES_H
+# define OPENSSL_CORE_NAMES_H
 
 # ifdef __cplusplus
 extern "C" {
@@ -136,6 +136,7 @@ extern "C" {
 #define OSSL_KDF_NAME_TLS1_PRF      "TLS1-PRF"
 #define OSSL_KDF_NAME_X942KDF       "X942KDF"
 #define OSSL_KDF_NAME_X963KDF       "X963KDF"
+#define OSSL_KDF_NAME_KBKDF         "KBKDF"
 
 /* PKEY parameters */
 /* Diffie-Hellman/DSA Parameters */
