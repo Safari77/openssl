@@ -7,7 +7,7 @@ openssl-enc - symmetric cipher routines
 =head1 SYNOPSIS
 
 B<openssl>
-[B<->I<cipher>]
+[B<-I<cipher>>]
 [B<-help>]
 [B<-ciphers>]
 [B<-in> I<filename>]
@@ -38,6 +38,8 @@ B<openssl>
 [B<-rand> I<file...>]
 [B<-writerand> I<file>]
 [B<-engine> I<id>]
+
+=for comment ifdef z engine
 
 B<openssl> I<cipher> [B<...>]
 

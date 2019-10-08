@@ -12,8 +12,9 @@
 #include "internal/providercommonerr.h"
 
 /* TODO (3.0) Figure out what flags need to be set */
-#define AES_XTS_FLAGS (EVP_CIPH_FLAG_DEFAULT_ASN1 | EVP_CIPH_CUSTOM_IV         \
-                       | EVP_CIPH_ALWAYS_CALL_INIT | EVP_CIPH_CTRL_INIT        \
+#define AES_XTS_FLAGS (EVP_CIPH_CUSTOM_IV          \
+                       | EVP_CIPH_ALWAYS_CALL_INIT \
+                       | EVP_CIPH_CTRL_INIT        \
                        | EVP_CIPH_CUSTOM_COPY)
 
 #define AES_XTS_IV_BITS 128
@@ -75,12 +76,8 @@ static int aes_xts_init(void *vctx, const unsigned char *key, size_t keylen,
     ctx->enc = enc;
 
     if (iv != NULL) {
-        if (ivlen != ctx->ivlen) {
-            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_IV_LENGTH);
+        if (!cipher_generic_initiv(vctx, iv, ivlen))
             return 0;
-        }
-        memcpy(ctx->iv, iv, ivlen);
-        xctx->iv_set = 1;
     }
     if (key != NULL) {
         if (keylen != ctx->keylen) {
@@ -154,7 +151,7 @@ static int aes_xts_cipher(void *vctx, unsigned char *out, size_t *outl,
 
     if (ctx->xts.key1 == NULL
             || ctx->xts.key2 == NULL
-            || !ctx->iv_set
+            || !ctx->base.iv_set
             || out == NULL
             || in == NULL
             || inl < AES_BLOCK_SIZE)

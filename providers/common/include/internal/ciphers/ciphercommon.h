@@ -40,12 +40,13 @@ struct prov_cipher_ctx_st {
     } stream;
 
     unsigned int mode;
-    size_t keylen;        /* key size (in bytes) */
+    size_t keylen;           /* key size (in bytes) */
     size_t ivlen;
     size_t blocksize;
-    size_t bufsz;         /* Number of bytes in buf */
-    unsigned int pad : 1; /* Whether padding should be used or not */
-    unsigned int enc : 1; /* Set to 1 for encrypt, or 0 otherwise */
+    size_t bufsz;            /* Number of bytes in buf */
+    unsigned int pad : 1;    /* Whether padding should be used or not */
+    unsigned int enc : 1;    /* Set to 1 for encrypt, or 0 otherwise */
+    unsigned int iv_set : 1; /* Set when the iv is copied to the iv/oiv buffers */
 
     /*
      * num contains the number of bytes of |iv| which are valid for modes that
@@ -54,6 +55,8 @@ struct prov_cipher_ctx_st {
     unsigned int num;
     uint64_t flags;
 
+    /* The original value of the iv */
+    unsigned char oiv[GENERIC_BLOCK_SIZE];
     /* Buffer of partial blocks processed via update calls */
     unsigned char buf[GENERIC_BLOCK_SIZE];
     unsigned char iv[GENERIC_BLOCK_SIZE];
@@ -88,25 +91,8 @@ void cipher_generic_initkey(void *vctx, size_t kbits, size_t blkbits,
                             size_t ivbits, unsigned int mode, uint64_t flags,
                             const PROV_CIPHER_HW *hw, void *provctx);
 
-#define IMPLEMENT_generic_cipher(alg, UCALG, lcmode, UCMODE, flags, kbits,     \
-                                 blkbits, ivbits, typ)                         \
-static OSSL_OP_cipher_get_params_fn alg##_##kbits##_##lcmode##_get_params;     \
-static int alg##_##kbits##_##lcmode##_get_params(OSSL_PARAM params[])          \
-{                                                                              \
-    return cipher_generic_get_params(params, EVP_CIPH_##UCMODE##_MODE, flags,  \
-                                     kbits, blkbits, ivbits);                  \
-}                                                                              \
-static OSSL_OP_cipher_newctx_fn alg##_##kbits##_##lcmode##_newctx;             \
-static void * alg##_##kbits##_##lcmode##_newctx(void *provctx)                 \
-{                                                                              \
-     PROV_##UCALG##_CTX *ctx = OPENSSL_zalloc(sizeof(*ctx));                   \
-     if (ctx != NULL) {                                                        \
-         cipher_generic_initkey(ctx, kbits, blkbits, ivbits,                   \
-                                EVP_CIPH_##UCMODE##_MODE, flags,               \
-                                PROV_CIPHER_HW_##alg##_##lcmode(kbits), NULL); \
-     }                                                                         \
-     return ctx;                                                               \
-}                                                                              \
+#define IMPLEMENT_generic_cipher_func(alg, UCALG, lcmode, UCMODE, flags, kbits,\
+                                      blkbits, ivbits, typ)                    \
 const OSSL_DISPATCH alg##kbits##lcmode##_functions[] = {                       \
     { OSSL_FUNC_CIPHER_NEWCTX,                                                 \
       (void (*)(void)) alg##_##kbits##_##lcmode##_newctx },                    \
@@ -131,6 +117,28 @@ const OSSL_DISPATCH alg##kbits##lcmode##_functions[] = {                       \
      (void (*)(void))cipher_generic_settable_ctx_params },                     \
     { 0, NULL }                                                                \
 };
+
+#define IMPLEMENT_generic_cipher(alg, UCALG, lcmode, UCMODE, flags, kbits,     \
+                                 blkbits, ivbits, typ)                         \
+static OSSL_OP_cipher_get_params_fn alg##_##kbits##_##lcmode##_get_params;     \
+static int alg##_##kbits##_##lcmode##_get_params(OSSL_PARAM params[])          \
+{                                                                              \
+    return cipher_generic_get_params(params, EVP_CIPH_##UCMODE##_MODE, flags,  \
+                                     kbits, blkbits, ivbits);                  \
+}                                                                              \
+static OSSL_OP_cipher_newctx_fn alg##_##kbits##_##lcmode##_newctx;             \
+static void * alg##_##kbits##_##lcmode##_newctx(void *provctx)                 \
+{                                                                              \
+     PROV_##UCALG##_CTX *ctx = OPENSSL_zalloc(sizeof(*ctx));                   \
+     if (ctx != NULL) {                                                        \
+         cipher_generic_initkey(ctx, kbits, blkbits, ivbits,                   \
+                                EVP_CIPH_##UCMODE##_MODE, flags,               \
+                                PROV_CIPHER_HW_##alg##_##lcmode(kbits), NULL); \
+     }                                                                         \
+     return ctx;                                                               \
+}                                                                              \
+IMPLEMENT_generic_cipher_func(alg, UCALG, lcmode, UCMODE, flags, kbits,        \
+                              blkbits, ivbits, typ)
 
 PROV_CIPHER_HW_FN cipher_hw_generic_cbc;
 PROV_CIPHER_HW_FN cipher_hw_generic_ecb;
@@ -224,6 +232,38 @@ static int cipher_hw_##NAME##_##MODE##_cipher(PROV_CIPHER_CTX *ctx,            \
     ctx->num = num;                                                            \
     return 1;                                                                  \
 }
+
+#define CIPHER_DEFAULT_GETTABLE_CTX_PARAMS_START(name)                         \
+static const OSSL_PARAM name##_known_gettable_ctx_params[] = {                 \
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_KEYLEN, NULL),                         \
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_IVLEN, NULL),                          \
+    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_PADDING, NULL),                          \
+    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_NUM, NULL),                              \
+    OSSL_PARAM_octet_string(OSSL_CIPHER_PARAM_IV, NULL, 0),
+
+#define CIPHER_DEFAULT_GETTABLE_CTX_PARAMS_END(name)                           \
+    OSSL_PARAM_END                                                             \
+};                                                                             \
+const OSSL_PARAM * name##_gettable_ctx_params(void)                            \
+{                                                                              \
+    return name##_known_gettable_ctx_params;                                   \
+}
+
+#define CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_START(name)                         \
+static const OSSL_PARAM name##_known_settable_ctx_params[] = {                 \
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_KEYLEN, NULL),                         \
+    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_PADDING, NULL),                          \
+    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_NUM, NULL),
+#define CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_END(name)                           \
+    OSSL_PARAM_END                                                             \
+};                                                                             \
+const OSSL_PARAM * name##_settable_ctx_params(void)                            \
+{                                                                              \
+    return name##_known_settable_ctx_params;                                   \
+}
+
+int cipher_generic_initiv(PROV_CIPHER_CTX *ctx, const unsigned char *iv,
+                          size_t ivlen);
 
 size_t fillblock(unsigned char *buf, size_t *buflen, size_t blocksize,
                  const unsigned char **in, size_t *inlen);

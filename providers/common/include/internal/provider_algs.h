@@ -159,7 +159,20 @@ extern const OSSL_DISPATCH sm4128ctr_functions[];
 extern const OSSL_DISPATCH sm4128ofb128_functions[];
 extern const OSSL_DISPATCH sm4128cfb128_functions[];
 #endif /* OPENSSL_NO_SM4 */
-
+#ifndef OPENSSL_NO_RC5
+extern const OSSL_DISPATCH rc5128ecb_functions[];
+extern const OSSL_DISPATCH rc5128cbc_functions[];
+extern const OSSL_DISPATCH rc5128ofb64_functions[];
+extern const OSSL_DISPATCH rc5128cfb64_functions[];
+#endif /* OPENSSL_NO_RC5 */
+#ifndef OPENSSL_NO_RC2
+extern const OSSL_DISPATCH rc2128ecb_functions[];
+extern const OSSL_DISPATCH rc2128cbc_functions[];
+extern const OSSL_DISPATCH rc240cbc_functions[];
+extern const OSSL_DISPATCH rc264cbc_functions[];
+extern const OSSL_DISPATCH rc2128cfb128_functions[];
+extern const OSSL_DISPATCH rc2128ofb128_functions[];
+#endif /* OPENSSL_NO_RC2 */
 #ifndef OPENSSL_NO_DES
 extern const OSSL_DISPATCH tdes_ede3_ecb_functions[];
 extern const OSSL_DISPATCH tdes_ede3_cbc_functions[];

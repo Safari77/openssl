@@ -1663,7 +1663,7 @@ X509_PURPOSE_cleanup                    1700	3_0_0	EXIST::FUNCTION:
 ESS_SIGNING_CERT_dup                    1701	3_0_0	EXIST::FUNCTION:
 ENGINE_set_default_DSA                  1702	3_0_0	EXIST::FUNCTION:ENGINE
 X509_REVOKED_new                        1703	3_0_0	EXIST::FUNCTION:
-NCONF_WIN32                             1704	3_0_0	EXIST::FUNCTION:
+NCONF_WIN32                             1704	3_0_0	EXIST::FUNCTION:DEPRECATEDIN_3
 RSA_padding_check_PKCS1_OAEP_mgf1       1705	3_0_0	EXIST::FUNCTION:RSA
 X509_policy_tree_get0_level             1706	3_0_0	EXIST::FUNCTION:
 ASN1_parse_dump                         1708	3_0_0	EXIST::FUNCTION:
@@ -4822,3 +4822,7 @@ OSSL_CMP_log_close                      4938	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_print_errors_cb                4939	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CRMF_CERTID_get0_issuer            4940	3_0_0	EXIST::FUNCTION:CRMF
 OSSL_CRMF_CERTID_get0_serialNumber      4941	3_0_0	EXIST::FUNCTION:CRMF
+EVP_DigestSignInit_ex                   4942	3_0_0	EXIST::FUNCTION:
+EVP_DigestSignUpdate                    4943	3_0_0	EXIST::FUNCTION:
+EVP_DigestVerifyInit_ex                 4944	3_0_0	EXIST::FUNCTION:
+EVP_DigestVerifyUpdate                  4945	3_0_0	EXIST::FUNCTION:

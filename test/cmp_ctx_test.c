@@ -109,6 +109,8 @@ static int test_CTX_reinit(void)
     return result;
 }
 
+#if !defined(OPENSSL_NO_ERR) && !defined(OPENSSL_NO_AUTOERRINIT)
+
 static int msg_total_size = 0;
 static int msg_total_size_log_cb(const char *func, const char *file, int line,
                                  OSSL_CMP_severity level, const char *msg)
@@ -117,12 +119,12 @@ static int msg_total_size_log_cb(const char *func, const char *file, int line,
     return 1;
 }
 
-#define STR64 "This is a 64 bytes looooooooooooooooooooooooooooooooong string.\n"
+# define STR64 "This is a 64 bytes looooooooooooooooooooooooooooooooong string.\n"
 /* max string length ISO C90 compilers are required to support is 509. */
-#define STR509 STR64 STR64 STR64 STR64 STR64 STR64 STR64 \
+# define STR509 STR64 STR64 STR64 STR64 STR64 STR64 STR64 \
     "This is a 61 bytes loooooooooooooooooooooooooooooong string.\n"
 static const char *const max_str_literal = STR509;
-#define STR_SEP "<SEP>"
+# define STR_SEP "<SEP>"
 
 static int execute_CTX_print_errors_test(OSSL_CMP_CTX_TEST_FIXTURE *fixture)
 {
@@ -135,10 +137,10 @@ static int execute_CTX_print_errors_test(OSSL_CMP_CTX_TEST_FIXTURE *fixture)
     if (!TEST_true(ctx->log_cb == NULL))
         res = 0;
 
-#ifndef OPENSSL_NO_STDIO
+# ifndef OPENSSL_NO_STDIO
     CMPerr(0, CMP_R_MULTIPLE_SAN_SOURCES);
     OSSL_CMP_CTX_print_errors(ctx); /* should print above error to STDERR */
-#endif
+# endif
 
     /* this should work regardless of OPENSSL_NO_STDIO and OPENSSL_NO_TRACE: */
     if (!TEST_true(OSSL_CMP_CTX_set_log_cb(ctx, msg_total_size_log_cb)))
@@ -184,6 +186,7 @@ static int test_CTX_print_errors(void)
     EXECUTE_TEST(execute_CTX_print_errors_test, tear_down);
     return result;
 }
+#endif
 
 static int execute_CTX_reqExtensions_have_SAN_test(
                                              OSSL_CMP_CTX_TEST_FIXTURE *fixture)
@@ -237,7 +240,8 @@ static int test_log_cb(const char *func, const char *file, int line,
 {
     test_log_cb_res =
 # ifndef PEDANTIC
-        strcmp(func, "execute_cmp_ctx_log_cb_test") == 0 &&
+        (strcmp(func, "execute_cmp_ctx_log_cb_test") == 0
+         || strcmp(func, "(unknown function)") == 0) &&
 # endif
         (strcmp(file, OPENSSL_FILE) == 0 || strcmp(file, "(no file)") == 0)
         && (line == test_log_line || line == 0)
@@ -787,11 +791,13 @@ int setup_tests(void)
      * with OSSL_CMP_severity OSSL_CMP_LOG_ERR/WARNING/DEBUG/INFO:
      */
     ADD_TEST(test_cmp_ctx_log_cb);
+#if !defined(OPENSSL_NO_ERR) && !defined(OPENSSL_NO_AUTOERRINIT)
     /* also tests OSSL_CMP_CTX_set_log_cb(), OSSL_CMP_print_errors_cb(),
        ossl_cmp_add_error_txt(), and the macros
        ossl_cmp_add_error_data and ossl_cmp_add_error_line:
     */
     ADD_TEST(test_CTX_print_errors);
+#endif
 /* message transfer: */
     ADD_TEST(test_CTX_set1_get0_serverPath);
     ADD_TEST(test_CTX_set1_get0_serverName);

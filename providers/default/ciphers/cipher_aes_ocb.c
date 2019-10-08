@@ -107,7 +107,8 @@ static int aes_ocb_init(void *vctx, const unsigned char *key, size_t keylen,
            }
            ctx->base.ivlen = ivlen;
        }
-       memcpy(ctx->base.iv, iv, ivlen);
+       if (!cipher_generic_initiv(&ctx->base, iv, ivlen))
+           return 0;
        ctx->iv_state = IV_STATE_BUFFERED;
    }
    if (key != NULL) {
@@ -285,9 +286,10 @@ static void aes_ocb_freectx(void *vctx)
 {
     PROV_AES_OCB_CTX *ctx = (PROV_AES_OCB_CTX *)vctx;
 
-    aes_generic_ocb_cleanup(ctx);
-    OPENSSL_cleanse(ctx->base.iv, sizeof(ctx->base.iv));
-    OPENSSL_clear_free(ctx,  sizeof(*ctx));
+    if (ctx != NULL) {
+        aes_generic_ocb_cleanup(ctx);
+        OPENSSL_clear_free(ctx,  sizeof(*ctx));
+    }
 }
 
 static void *aes_ocb_dupctx(void *vctx)
@@ -300,8 +302,10 @@ static void *aes_ocb_dupctx(void *vctx)
         return NULL;
     }
     *ret = *in;
-    if (!aes_generic_ocb_copy_ctx(ret, in))
+    if (!aes_generic_ocb_copy_ctx(ret, in)) {
         OPENSSL_free(ret);
+        ret = NULL;
+    }
     return ret;
 }
 
@@ -384,7 +388,7 @@ static int aes_ocb_get_ctx_params(void *vctx, OSSL_PARAM params[])
             ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_IV_LENGTH);
             return 0;
         }
-        if (!OSSL_PARAM_set_octet_string(p, ctx->base.iv, ctx->base.ivlen)) {
+        if (!OSSL_PARAM_set_octet_string(p, ctx->base.oiv, ctx->base.ivlen)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
             return 0;
         }

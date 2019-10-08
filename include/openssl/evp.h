@@ -275,8 +275,9 @@ int (*EVP_CIPHER_meth_get_ctrl(const EVP_CIPHER *cipher))(EVP_CIPHER_CTX *,
 # define         EVP_CIPH_CUSTOM_COPY            0x400
 /* Don't use standard iv length function */
 # define         EVP_CIPH_CUSTOM_IV_LENGTH       0x800
-/* Allow use default ASN1 get/set iv */
-# define         EVP_CIPH_FLAG_DEFAULT_ASN1      0x1000
+/* Legacy and no longer relevant: Allow use default ASN1 get/set iv */
+# define         EVP_CIPH_FLAG_DEFAULT_ASN1      0
+/* Free:                                         0x1000 */
 /* Buffer length in bits not bytes: CFB1 mode only */
 # define         EVP_CIPH_FLAG_LENGTH_BITS       0x2000
 /* Note if suitable for use in FIPS mode */
@@ -291,6 +292,8 @@ int (*EVP_CIPHER_meth_get_ctrl(const EVP_CIPHER *cipher))(EVP_CIPHER_CTX *,
 # define         EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK 0x400000
 /* Cipher can handle pipeline operations */
 # define         EVP_CIPH_FLAG_PIPELINE          0X800000
+/* For provider implementations that handle  ASN1 get/set param themselves */
+# define         EVP_CIPH_FLAG_CUSTOM_ASN1       0x1000000
 
 /*
  * Cipher context flag to indicate we can handle wrap mode: if allowed in
@@ -530,8 +533,6 @@ void *EVP_CIPHER_CTX_set_cipher_data(EVP_CIPHER_CTX *ctx, void *cipher_data);
 # define EVP_VerifyUpdate(a,b,c)         EVP_DigestUpdate(a,b,c)
 # define EVP_OpenUpdate(a,b,c,d,e)       EVP_DecryptUpdate(a,b,c,d,e)
 # define EVP_SealUpdate(a,b,c,d,e)       EVP_EncryptUpdate(a,b,c,d,e)
-# define EVP_DigestSignUpdate(a,b,c)     EVP_DigestUpdate(a,b,c)
-# define EVP_DigestVerifyUpdate(a,b,c)   EVP_DigestUpdate(a,b,c)
 
 # ifdef CONST_STRICT
 void BIO_set_md(BIO *, const EVP_MD *md);
@@ -667,15 +668,23 @@ __owur int EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sigret,
                             size_t siglen, const unsigned char *tbs,
                             size_t tbslen);
 
+int EVP_DigestSignInit_ex(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
+                          const char *mdname, const char *props, EVP_PKEY *pkey,
+                          EVP_SIGNATURE *signature);
 /*__owur*/ int EVP_DigestSignInit(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
                                   const EVP_MD *type, ENGINE *e,
                                   EVP_PKEY *pkey);
+int EVP_DigestSignUpdate(EVP_MD_CTX *ctx, const void *data, size_t dsize);
 __owur int EVP_DigestSignFinal(EVP_MD_CTX *ctx, unsigned char *sigret,
                                size_t *siglen);
 
+int EVP_DigestVerifyInit_ex(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
+                            const char *mdname, const char *props,
+                            EVP_PKEY *pkey, EVP_SIGNATURE *signature);
 __owur int EVP_DigestVerifyInit(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
                                 const EVP_MD *type, ENGINE *e,
                                 EVP_PKEY *pkey);
+int EVP_DigestVerifyUpdate(EVP_MD_CTX *ctx, const void *data, size_t dsize);
 __owur int EVP_DigestVerifyFinal(EVP_MD_CTX *ctx, const unsigned char *sig,
                                  size_t siglen);
 

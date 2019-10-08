@@ -59,6 +59,7 @@ extern "C" {
 #define OSSL_CIPHER_PARAM_IVLEN     "ivlen"      /* size_t */
 #define OSSL_CIPHER_PARAM_IV        "iv"         /* octet_string OR octet_ptr */
 #define OSSL_CIPHER_PARAM_NUM       "num"        /* uint */
+#define OSSL_CIPHER_PARAM_ROUNDS    "rounds"     /* uint */
 #define OSSL_CIPHER_PARAM_AEAD_TAG           "tag"        /* octet_string */
 #define OSSL_CIPHER_PARAM_AEAD_TLS1_AAD      "tlsaad"     /* octet_string */
 #define OSSL_CIPHER_PARAM_AEAD_TLS1_AAD_PAD  "tlsaadpad"  /* size_t */
@@ -66,6 +67,9 @@ extern "C" {
 #define OSSL_CIPHER_PARAM_AEAD_IVLEN         OSSL_CIPHER_PARAM_IVLEN
 #define OSSL_CIPHER_PARAM_AEAD_TAGLEN        "taglen"     /* size_t */
 #define OSSL_CIPHER_PARAM_RANDOM_KEY         "randkey"    /* octet_string */
+#define OSSL_CIPHER_PARAM_RC2_KEYBITS        "keybits"    /* size_t */
+/* For passing the AlgorithmIdentifier parameter in DER form */
+#define OSSL_CIPHER_PARAM_ALG_ID             "alg_id_param" /* octet_string */
 
 /* digest parameters */
 #define OSSL_DIGEST_PARAM_XOFLEN     "xoflen"    /* size_t */
