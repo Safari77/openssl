@@ -66,6 +66,7 @@ extern "C" {
 #define OSSL_CIPHER_PARAM_AEAD_TLS1_IV_FIXED "tlsivfixed" /* octet_string */
 #define OSSL_CIPHER_PARAM_AEAD_IVLEN         OSSL_CIPHER_PARAM_IVLEN
 #define OSSL_CIPHER_PARAM_AEAD_TAGLEN        "taglen"     /* size_t */
+#define OSSL_CIPHER_PARAM_AEAD_MAC_KEY       "mackey"     /* octet_string */
 #define OSSL_CIPHER_PARAM_RANDOM_KEY         "randkey"    /* octet_string */
 #define OSSL_CIPHER_PARAM_RC2_KEYBITS        "keybits"    /* size_t */
 /* For passing the AlgorithmIdentifier parameter in DER form */
@@ -81,6 +82,7 @@ extern "C" {
 #define OSSL_DIGEST_PARAM_FLAGS      "flags"     /* ulong */
 
 /* Known DIGEST names (not a complete list) */
+#define OSSL_DIGEST_NAME_MD5 "MD5"
 #define OSSL_DIGEST_NAME_KECCAK_KMAC128 "KECCAK_KMAC128"
 #define OSSL_DIGEST_NAME_KECCAK_KMAC256 "KECCAK_KMAC256"
 

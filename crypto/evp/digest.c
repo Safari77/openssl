@@ -285,6 +285,24 @@ int EVP_DigestUpdate(EVP_MD_CTX *ctx, const void *data, size_t count)
     if (count == 0)
         return 1;
 
+    if (ctx->pctx != NULL
+            && EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx->pctx)
+            && ctx->pctx->op.sig.sigprovctx != NULL) {
+        /*
+         * Prior to OpenSSL 3.0 EVP_DigestSignUpdate() and
+         * EVP_DigestVerifyUpdate() were just macros for EVP_DigestUpdate().
+         * Some code calls EVP_DigestUpdate() directly even when initialised
+         * with EVP_DigestSignInit_ex() or EVP_DigestVerifyInit_ex(), so we
+         * detect that and redirect to the correct EVP_Digest*Update() function
+         */
+        if (ctx->pctx->operation == EVP_PKEY_OP_SIGNCTX)
+            return EVP_DigestSignUpdate(ctx, data, count);
+        if (ctx->pctx->operation == EVP_PKEY_OP_VERIFYCTX)
+            return EVP_DigestVerifyUpdate(ctx, data, count);
+        EVPerr(EVP_F_EVP_DIGESTUPDATE, EVP_R_UPDATE_ERROR);
+        return 0;
+    }
+
     if (ctx->digest == NULL || ctx->digest->prov == NULL)
         goto legacy;
 
@@ -656,6 +674,10 @@ int EVP_MD_CTX_ctrl(EVP_MD_CTX *ctx, int cmd, int p1, void *p2)
         set_params = 0;
         params[0] = OSSL_PARAM_construct_utf8_string(OSSL_DIGEST_PARAM_MICALG,
                                                      p2, p1 ? p1 : 9999);
+        break;
+    case EVP_CTRL_SSL3_MASTER_SECRET:
+        params[0] = OSSL_PARAM_construct_octet_string(OSSL_DIGEST_PARAM_SSL3_MS,
+                                                      p2, p1);
         break;
     default:
         return EVP_CTRL_RET_UNSUPPORTED;
