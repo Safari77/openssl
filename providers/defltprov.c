@@ -339,6 +339,7 @@ static const OSSL_ALGORITHM deflt_kdfs[] = {
 #ifndef OPENSSL_NO_SCRYPT
     { "SCRYPT:id-scrypt", "default=yes", kdf_scrypt_functions },
 #endif
+    { OSSL_KDF_NAME_KRB5KDF, "default=yes", kdf_krb5kdf_functions },
    { NULL, NULL, NULL }
 };
 
@@ -364,6 +365,7 @@ static const OSSL_ALGORITHM deflt_keymgmt[] = {
 #ifndef OPENSSL_NO_DSA
     { "DSA", "default=yes", dsa_keymgmt_functions },
 #endif
+    { "RSA", "default=yes", rsa_keymgmt_functions },
     { NULL, NULL, NULL }
 };
 
