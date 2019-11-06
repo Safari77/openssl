@@ -21,9 +21,16 @@ struct evp_pkey_ctx_st {
     /* Actual operation */
     int operation;
 
-    /* Algorithm name and properties associated with this context */
+    /*
+     * Library context, Algorithm name and properties associated
+     * with this context
+     */
+    OPENSSL_CTX *libctx;
     const char *algorithm;
     const char *propquery;
+
+    /* cached key manager */
+    EVP_KEYMGMT *keymgmt;
 
     union {
         struct {
@@ -615,3 +622,6 @@ void evp_encode_ctx_set_flags(EVP_ENCODE_CTX *ctx, unsigned int flags);
 #define EVP_ENCODE_CTX_NO_NEWLINES          1
 /* Use the SRP base64 alphabet instead of the standard one */
 #define EVP_ENCODE_CTX_USE_SRP_ALPHABET     2
+
+const EVP_CIPHER *evp_get_cipherbyname_ex(OPENSSL_CTX *libctx, const char *name);
+const EVP_MD *evp_get_digestbyname_ex(OPENSSL_CTX *libctx, const char *name);

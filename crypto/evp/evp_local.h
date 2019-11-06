@@ -102,8 +102,6 @@ struct evp_keyexch_st {
     CRYPTO_REF_COUNT refcnt;
     CRYPTO_RWLOCK *lock;
 
-    EVP_KEYMGMT *keymgmt;
-
     OSSL_OP_keyexch_newctx_fn *newctx;
     OSSL_OP_keyexch_init_fn *init;
     OSSL_OP_keyexch_set_peer_fn *set_peer;
@@ -119,8 +117,6 @@ struct evp_signature_st {
     OSSL_PROVIDER *prov;
     CRYPTO_REF_COUNT refcnt;
     CRYPTO_RWLOCK *lock;
-
-    EVP_KEYMGMT *keymgmt;
 
     OSSL_OP_signature_newctx_fn *newctx;
     OSSL_OP_signature_sign_init_fn *sign_init;
