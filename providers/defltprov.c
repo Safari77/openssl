@@ -156,6 +156,11 @@ static const OSSL_ALGORITHM deflt_ciphers[] = {
     { "AES-192-OCB", "default=yes", aes192ocb_functions },
     { "AES-128-OCB", "default=yes", aes128ocb_functions },
 #endif /* OPENSSL_NO_OCB */
+#ifndef OPENSSL_NO_SIV
+    { "AES-128-SIV", "default=yes", aes128siv_functions },
+    { "AES-192-SIV", "default=yes", aes192siv_functions },
+    { "AES-256-SIV", "default=yes", aes256siv_functions },
+#endif /* OPENSSL_NO_SIV */
     { "AES-256-GCM:id-aes256-GCM", "default=yes", aes256gcm_functions },
     { "AES-192-GCM:id-aes192-GCM", "default=yes", aes192gcm_functions },
     { "AES-128-GCM:id-aes128-GCM", "default=yes", aes128gcm_functions },
@@ -280,6 +285,9 @@ static const OSSL_ALGORITHM deflt_ciphers[] = {
 #ifndef OPENSSL_NO_RC4
     { "RC4", "default=yes", rc4128_functions },
     { "RC4-40", "default=yes", rc440_functions },
+# ifndef OPENSSL_NO_MD5
+    { "RC4-HMAC-MD5", "default=yes", rc4_hmac_md5_functions },
+# endif /* OPENSSL_NO_MD5 */
 #endif /* OPENSSL_NO_RC4 */
 #ifndef OPENSSL_NO_RC5
     { "RC5-ECB", "default=yes", rc5128ecb_functions },
@@ -357,6 +365,10 @@ static const OSSL_ALGORITHM deflt_signature[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM deflt_asym_cipher[] = {
+    { "RSA:rsaEncryption", "default=yes", rsa_asym_cipher_functions },
+    { NULL, NULL, NULL }
+};
 
 static const OSSL_ALGORITHM deflt_keymgmt[] = {
 #ifndef OPENSSL_NO_DH
@@ -389,6 +401,8 @@ static const OSSL_ALGORITHM *deflt_query(OSSL_PROVIDER *prov,
         return deflt_keyexch;
     case OSSL_OP_SIGNATURE:
         return deflt_signature;
+    case OSSL_OP_ASYM_CIPHER:
+        return deflt_asym_cipher;
     }
     return NULL;
 }
