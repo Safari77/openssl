@@ -113,7 +113,8 @@ static size_t internal_trace_cb(const char *buf, size_t cnt,
         tid = CRYPTO_THREAD_get_current_id();
         hex = OPENSSL_buf2hexstr((const unsigned char *)&tid, sizeof(tid));
         BIO_snprintf(buffer, sizeof(buffer), "TRACE[%s]:%s: ",
-                     hex, OSSL_trace_get_category_name(category));
+                     hex == NULL ? "<null>" : hex,
+                     OSSL_trace_get_category_name(category));
         OPENSSL_free(hex);
         BIO_ctrl(trace_data->bio, PREFIX_CTRL_SET_PREFIX,
                  strlen(buffer), buffer);
@@ -276,6 +277,13 @@ int main(int argc, char *argv[])
     }
 
     prog = prog_init();
+    if (prog == NULL) {
+        BIO_printf(bio_err,
+                   "FATAL: Startup failure (dev note: prog_init() failed)\n");
+        ERR_print_errors(bio_err);
+        ret = 1;
+        goto end;
+    }
     pname = opt_progname(argv[0]);
 
     /* first check the program name */
@@ -384,11 +392,13 @@ typedef enum HELP_CHOICE {
 } HELP_CHOICE;
 
 const OPTIONS help_options[] = {
-    {OPT_HELP_STR, 1, '-', "Usage: help [options]\n"},
-    {OPT_HELP_STR, 1, '-', "       help [command]\n"},
+    {OPT_HELP_STR, 1, '-', "Usage: help [options] [command]\n"},
 
     OPT_SECTION("General"),
     {"help", OPT_hHELP, '-', "Display this summary"},
+
+    OPT_PARAMETERS(),
+    {"command", 0, 0, "Name of command to display help (optional)"},
     {NULL}
 };
 

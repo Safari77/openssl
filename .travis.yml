@@ -27,7 +27,7 @@ compiler:
 
 env:
     - CONFIG_OPTS="" DESTDIR="_install"
-    - CONFIG_OPTS="no-asm -Werror --debug no-afalgeng no-shared enable-crypto-mdebug enable-rc5 enable-md2"
+    - CONFIG_OPTS="no-asm -Werror --debug no-afalgeng no-shared enable-rc5 enable-md2 -fsanitize=address" LSAN_OPTIONS="report_objects=1"
     - CONFIG_OPTS="no-asm no-makedepend enable-buildtest-c++ --strict-warnings -D_DEFAULT_SOURCE" BUILDONLY="yes" CHECKDOCS="yes" GENERATE="yes" CPPFLAGS="-ansi"
 
 matrix:
@@ -130,7 +130,7 @@ matrix:
 before_script:
     - env
     - if [ "$TRAVIS_PULL_REQUEST" != "false" -a -n "$EXTENDED_TEST" ]; then
-          (git log -1 $TRAVIS_COMMIT_RANGE | grep '\[extended tests\]' > /dev/null) || exit 0;
+          (git log -1 $TRAVIS_COMMIT_RANGE | grep '\[extended tests\]' > /dev/null) || travis_terminate 0;
       fi
     - if [ -n "$DESTDIR" ]; then
           sh .travis-create-release.sh $TRAVIS_OS_NAME;

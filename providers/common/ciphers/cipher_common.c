@@ -207,6 +207,8 @@ int cipher_generic_block_update(void *vctx, unsigned char *out, size_t *outl,
             ERR_raise(ERR_LIB_PROV, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
             return 0;
         }
+    }
+    if (nextblocks > 0) {
         if (!ctx->hw->cipher(ctx, out, in, nextblocks)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_CIPHER_OPERATION_FAILED);
             return 0;
@@ -288,6 +290,11 @@ int cipher_generic_stream_update(void *vctx, unsigned char *out, size_t *outl,
                                  size_t inl)
 {
     PROV_CIPHER_CTX *ctx = (PROV_CIPHER_CTX *)vctx;
+
+    if (inl == 0) {
+        *outl = 0;
+        return 1;
+    }
 
     if (outsize < inl) {
         ERR_raise(ERR_LIB_PROV, PROV_R_OUTPUT_BUFFER_TOO_SMALL);
