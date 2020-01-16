@@ -9,10 +9,16 @@
 
 /* Dispatch functions for AES SIV mode */
 
+/*
+ * This file uses the low level AES functions (which are deprecated for
+ * non-internal use) in order to implement provider AES ciphers.
+ */
+#include "internal/deprecated.h"
+
 #include "cipher_aes_siv.h"
 #include "prov/implementations.h"
 #include "prov/providercommonerr.h"
-#include "prov/cipher_aead.h"
+#include "prov/ciphercommon_aead.h"
 
 #define siv_stream_update siv_cipher
 #define SIV_FLAGS AEAD_FLAGS

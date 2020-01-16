@@ -62,7 +62,7 @@ ENDIF
 $CORE_COMMON=provider_core.c provider_predefined.c \
         core_fetch.c core_algorithm.c core_namemap.c
 
-SOURCE[../libcrypto]=$CORE_COMMON provider_conf.c
+SOURCE[../libcrypto]=$CORE_COMMON provider_conf.c self_test_core.c
 SOURCE[../providers/libfips.a]=$CORE_COMMON
 
 # Central utilities
@@ -73,7 +73,7 @@ $UTIL_COMMON=\
 $UTIL_DEFINE=$CPUIDDEF
 
 SOURCE[../libcrypto]=$UTIL_COMMON \
-        mem.c mem_sec.c mem_dbg.c \
+        mem.c mem_sec.c \
         cversion.c info.c cpt_err.c ebcdic.c uid.c o_time.c o_dir.c \
         o_fopen.c getenv.c o_init.c o_fips.c init.c trace.c provider.c \
         $UPLINKSRC
@@ -85,6 +85,7 @@ DEFINE[../libcrypto]=$UTIL_DEFINE $UPLINKDEF
 DEFINE[../providers/libfips.a]=$UTIL_DEFINE
 DEFINE[../providers/fips]=$UTIL_DEFINE
 DEFINE[../providers/libimplementations.a]=$UTIL_DEFINE
+DEFINE[../providers/libcommon.a]=$UTIL_DEFINE
 
 DEPEND[info.o]=buildinf.h
 DEPEND[cversion.o]=buildinf.h

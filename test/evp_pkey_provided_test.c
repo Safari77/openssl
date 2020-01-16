@@ -122,7 +122,7 @@ static int test_fromdata_rsa(void)
         OSSL_PARAM_END
     };
 
-    if (!TEST_ptr(ctx = EVP_PKEY_CTX_new_provided(NULL, "RSA", NULL)))
+    if (!TEST_ptr(ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL)))
         goto err;
 
     if (!TEST_true(EVP_PKEY_key_fromdata_init(ctx))
@@ -139,6 +139,7 @@ static int test_fromdata_rsa(void)
     return ret;
 }
 
+#ifndef OPENSSL_NO_DH
 /* Array indexes used in test_fromdata_dh */
 #define PRIV_KEY        0
 #define PUB_KEY         1
@@ -171,7 +172,7 @@ static int test_fromdata_dh(void)
         OSSL_PARAM_END
     };
 
-    if (!TEST_ptr(ctx = EVP_PKEY_CTX_new_provided(NULL, "DH", NULL)))
+    if (!TEST_ptr(ctx = EVP_PKEY_CTX_new_from_name(NULL, "DH", NULL)))
         goto err;
 
     if (!TEST_true(EVP_PKEY_key_fromdata_init(ctx))
@@ -187,10 +188,13 @@ static int test_fromdata_dh(void)
 
     return ret;
 }
+#endif
 
 int setup_tests(void)
 {
     ADD_TEST(test_fromdata_rsa);
+#ifndef OPENSSL_NO_DH
     ADD_TEST(test_fromdata_dh);
+#endif
     return 1;
 }

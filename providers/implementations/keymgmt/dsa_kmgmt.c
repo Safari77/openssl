@@ -10,11 +10,12 @@
 #include <openssl/core_numbers.h>
 #include <openssl/core_names.h>
 #include <openssl/bn.h>
-#include <openssl/dsa.h>
 #include <openssl/params.h>
 #include "internal/param_build.h"
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
+#include "prov/provider_ctx.h"
+#include "crypto/dsa.h"
 
 static OSSL_OP_keymgmt_importdomparams_fn dsa_importdomparams;
 static OSSL_OP_keymgmt_exportdomparams_fn dsa_exportdomparams;

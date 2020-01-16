@@ -18,9 +18,6 @@
 #ifndef OPENSSL_NO_MD2
 # include <openssl/md2.h>
 #endif
-#ifndef OPENSSL_NO_RC4
-# include <openssl/rc4.h>
-#endif
 #ifndef OPENSSL_NO_DES
 # include <openssl/des.h>
 #endif
@@ -129,20 +126,11 @@ opthelp:
     if (options) {
         printf("options: ");
         printf(" %s", BN_options());
-#ifndef OPENSSL_NO_MD2
-        printf(" %s", MD2_options());
-#endif
-#ifndef OPENSSL_NO_RC4
-        printf(" %s", RC4_options());
-#endif
 #ifndef OPENSSL_NO_DES
         printf(" %s", DES_options());
 #endif
 #ifndef OPENSSL_NO_IDEA
         printf(" %s", IDEA_options());
-#endif
-#ifndef OPENSSL_NO_BF
-        printf(" %s", BF_options());
 #endif
         printf("\n");
     }
