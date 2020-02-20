@@ -8,6 +8,12 @@
  * https://www.openssl.org/source/license.html
  */
 
+/*
+ * DH low level APIs are deprecated for public use, but still ok for
+ * internal use.
+ */
+#include "internal/deprecated.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <openssl/engine.h>
@@ -186,17 +192,6 @@ static EVP_PKEY_CTX *int_ctx_new(OPENSSL_CTX *libctx,
         return NULL;
     if (e == NULL)
         name = OBJ_nid2sn(id);
-    propquery = NULL;
-    /*
-     * We were called using legacy data, or an EVP_PKEY, but an EVP_PKEY
-     * isn't tied to a specific library context, so we fall back to the
-     * default library context.
-     * TODO(v3.0): an EVP_PKEY that doesn't originate from a leagacy key
-     * structure only has the pkeys[] cache, where the first element is
-     * considered the "origin".  Investigate if that could be a suitable
-     * way to find a library context.
-     */
-    libctx = NULL;
 
 # ifndef OPENSSL_NO_ENGINE
     if (e == NULL && pkey != NULL)
@@ -269,9 +264,10 @@ EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_name(OPENSSL_CTX *libctx,
     return int_ctx_new(libctx, NULL, NULL, name, propquery, -1);
 }
 
-EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_pkey(OPENSSL_CTX *libctx, EVP_PKEY *pkey)
+EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_pkey(OPENSSL_CTX *libctx, EVP_PKEY *pkey,
+                                         const char *propquery)
 {
-    return int_ctx_new(libctx, pkey, NULL, NULL, NULL, -1);
+    return int_ctx_new(libctx, pkey, NULL, NULL, propquery, -1);
 }
 
 void evp_pkey_ctx_free_old_ops(EVP_PKEY_CTX *ctx)
@@ -282,16 +278,16 @@ void evp_pkey_ctx_free_old_ops(EVP_PKEY_CTX *ctx)
         EVP_SIGNATURE_free(ctx->op.sig.signature);
         ctx->op.sig.sigprovctx = NULL;
         ctx->op.sig.signature = NULL;
-    }
-/* TODO(3.0): add dependancies and uncomment this when available for fips mode */
-#ifndef FIPS_MODE
-    else if (EVP_PKEY_CTX_IS_DERIVE_OP(ctx)) {
+    } else if (EVP_PKEY_CTX_IS_DERIVE_OP(ctx)) {
         if (ctx->op.kex.exchprovctx != NULL && ctx->op.kex.exchange != NULL)
             ctx->op.kex.exchange->freectx(ctx->op.kex.exchprovctx);
         EVP_KEYEXCH_free(ctx->op.kex.exchange);
         ctx->op.kex.exchprovctx = NULL;
         ctx->op.kex.exchange = NULL;
-    } else if (EVP_PKEY_CTX_IS_ASYM_CIPHER_OP(ctx)) {
+    }
+/* TODO(3.0): add dependancies and uncomment this when available for fips mode */
+#ifndef FIPS_MODE
+    else if (EVP_PKEY_CTX_IS_ASYM_CIPHER_OP(ctx)) {
         if (ctx->op.ciph.ciphprovctx != NULL && ctx->op.ciph.cipher != NULL)
             ctx->op.ciph.cipher->freectx(ctx->op.ciph.ciphprovctx);
         EVP_ASYM_CIPHER_free(ctx->op.ciph.cipher);
@@ -388,7 +384,6 @@ EVP_PKEY_CTX *EVP_PKEY_CTX_new_id(int id, ENGINE *e)
 {
     return int_ctx_new(NULL, NULL, e, NULL, NULL, id);
 }
-
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_dup(const EVP_PKEY_CTX *pctx)
 {
@@ -581,6 +576,12 @@ int EVP_PKEY_CTX_set_params(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
 #ifndef FIPS_MODE
 int EVP_PKEY_CTX_get_params(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
 {
+    if (EVP_PKEY_CTX_IS_DERIVE_OP(ctx)
+            && ctx->op.kex.exchprovctx != NULL
+            && ctx->op.kex.exchange != NULL
+            && ctx->op.kex.exchange->get_ctx_params != NULL)
+        return ctx->op.kex.exchange->get_ctx_params(ctx->op.kex.exchprovctx,
+                                                    params);
     if (EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx)
             && ctx->op.sig.sigprovctx != NULL
             && ctx->op.sig.signature != NULL
@@ -598,6 +599,10 @@ int EVP_PKEY_CTX_get_params(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
 
 const OSSL_PARAM *EVP_PKEY_CTX_gettable_params(EVP_PKEY_CTX *ctx)
 {
+    if (EVP_PKEY_CTX_IS_DERIVE_OP(ctx)
+            && ctx->op.kex.exchange != NULL
+            && ctx->op.kex.exchange->gettable_ctx_params != NULL)
+        return ctx->op.kex.exchange->gettable_ctx_params();
     if (EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx)
             && ctx->op.sig.signature != NULL
             && ctx->op.sig.signature->gettable_ctx_params != NULL)
@@ -627,6 +632,52 @@ const OSSL_PARAM *EVP_PKEY_CTX_settable_params(EVP_PKEY_CTX *ctx)
         return ctx->op.ciph.cipher->settable_ctx_params();
 
     return NULL;
+}
+
+/*
+ * Internal helpers for stricter EVP_PKEY_CTX_{set,get}_params().
+ *
+ * Return 1 on success, 0 or negative for errors.
+ *
+ * In particular they return -2 if any of the params is not supported.
+ *
+ * They are not available in FIPS_MODE as they depend on
+ *      - EVP_PKEY_CTX_{get,set}_params()
+ *      - EVP_PKEY_CTX_{gettable,settable}_params()
+ *
+ */
+int evp_pkey_ctx_set_params_strict(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
+{
+    const OSSL_PARAM *p;
+
+    if (ctx == NULL || params == NULL)
+        return 0;
+
+    for (p = params; p->key != NULL; p++) {
+        /* Check the ctx actually understands this parameter */
+        if (OSSL_PARAM_locate_const(EVP_PKEY_CTX_settable_params(ctx),
+                                    p->key) == NULL )
+            return -2;
+    }
+
+    return EVP_PKEY_CTX_set_params(ctx, params);
+}
+
+int evp_pkey_ctx_get_params_strict(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
+{
+    const OSSL_PARAM *p;
+
+    if (ctx == NULL || params == NULL)
+        return 0;
+
+    for (p = params; p->key != NULL; p++ ) {
+        /* Check the ctx actually understands this parameter */
+        if (OSSL_PARAM_locate_const(EVP_PKEY_CTX_gettable_params(ctx),
+                                    p->key) == NULL )
+            return -2;
+    }
+
+    return EVP_PKEY_CTX_get_params(ctx, params);
 }
 
 # ifndef OPENSSL_NO_DH
@@ -690,8 +741,7 @@ int EVP_PKEY_CTX_get_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD **md)
 
 int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD *md)
 {
-    OSSL_PARAM sig_md_params[3], *p = sig_md_params;
-    size_t mdsize;
+    OSSL_PARAM sig_md_params[2], *p = sig_md_params;
     const char *name;
 
     if (ctx == NULL || !EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx)) {
@@ -707,9 +757,7 @@ int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD *md)
 
     if (md == NULL) {
         name = "";
-        mdsize = 0;
     } else {
-        mdsize = EVP_MD_size(md);
         name = EVP_MD_name(md);
     }
 
@@ -718,10 +766,7 @@ int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD *md)
                                              * Cast away the const. This is read
                                              * only so should be safe
                                              */
-                                            (char *)name,
-                                            strlen(name) + 1);
-    *p++ = OSSL_PARAM_construct_size_t(OSSL_SIGNATURE_PARAM_DIGEST_SIZE,
-                                       &mdsize);
+                                            (char *)name, 0);
     *p++ = OSSL_PARAM_construct_end();
 
     return EVP_PKEY_CTX_set_params(ctx, sig_md_params);
@@ -730,42 +775,81 @@ int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *ctx, const EVP_MD *md)
 static int legacy_ctrl_to_param(EVP_PKEY_CTX *ctx, int keytype, int optype,
                                 int cmd, int p1, void *p2)
 {
-    switch (cmd) {
 # ifndef OPENSSL_NO_DH
-    case EVP_PKEY_CTRL_DH_PAD:
-        return EVP_PKEY_CTX_set_dh_pad(ctx, p1);
+    if (keytype == EVP_PKEY_DH) {
+        switch (cmd) {
+            case EVP_PKEY_CTRL_DH_PAD:
+                return EVP_PKEY_CTX_set_dh_pad(ctx, p1);
+        }
+    }
 # endif
-    case EVP_PKEY_CTRL_MD:
-        return EVP_PKEY_CTX_set_signature_md(ctx, p2);
-    case EVP_PKEY_CTRL_GET_MD:
-        return EVP_PKEY_CTX_get_signature_md(ctx, p2);
-    case EVP_PKEY_CTRL_RSA_PADDING:
-        return EVP_PKEY_CTX_set_rsa_padding(ctx, p1);
-    case EVP_PKEY_CTRL_GET_RSA_PADDING:
-        return EVP_PKEY_CTX_get_rsa_padding(ctx, p2);
-    case EVP_PKEY_CTRL_RSA_OAEP_MD:
-        return EVP_PKEY_CTX_set_rsa_oaep_md(ctx, p2);
-    case EVP_PKEY_CTRL_GET_RSA_OAEP_MD:
-        return EVP_PKEY_CTX_get_rsa_oaep_md(ctx, p2);
-    case EVP_PKEY_CTRL_RSA_MGF1_MD:
-        return EVP_PKEY_CTX_set_rsa_oaep_md(ctx, p2);
-    case EVP_PKEY_CTRL_GET_RSA_MGF1_MD:
-        return EVP_PKEY_CTX_get_rsa_oaep_md(ctx, p2);
-    case EVP_PKEY_CTRL_RSA_OAEP_LABEL:
-        return EVP_PKEY_CTX_set0_rsa_oaep_label(ctx, p2, p1);
-    case EVP_PKEY_CTRL_GET_RSA_OAEP_LABEL:
-        return EVP_PKEY_CTX_get0_rsa_oaep_label(ctx, (unsigned char **)p2);
-    case EVP_PKEY_CTRL_PKCS7_ENCRYPT:
-    case EVP_PKEY_CTRL_PKCS7_DECRYPT:
+# ifndef OPENSSL_NO_EC
+    if (keytype == EVP_PKEY_EC) {
+        switch (cmd) {
+            case EVP_PKEY_CTRL_EC_ECDH_COFACTOR:
+                if (p1 == -2) {
+                    return EVP_PKEY_CTX_get_ecdh_cofactor_mode(ctx);
+                } else if (p1 < -1 || p1 > 1) {
+                    /* Uses the same return values as EVP_PKEY_CTX_ctrl */
+                    return -2;
+                } else {
+                    return EVP_PKEY_CTX_set_ecdh_cofactor_mode(ctx, p1);
+                }
+            case EVP_PKEY_CTRL_EC_KDF_TYPE:
+                if (p1 == -2) {
+                    return EVP_PKEY_CTX_get_ecdh_kdf_type(ctx);
+                } else {
+                    return EVP_PKEY_CTX_set_ecdh_kdf_type(ctx, p1);
+                }
+            case EVP_PKEY_CTRL_GET_EC_KDF_MD:
+                return EVP_PKEY_CTX_get_ecdh_kdf_md(ctx, p2);
+            case EVP_PKEY_CTRL_EC_KDF_MD:
+                return EVP_PKEY_CTX_set_ecdh_kdf_md(ctx, p2);
+            case EVP_PKEY_CTRL_GET_EC_KDF_OUTLEN:
+                return EVP_PKEY_CTX_get_ecdh_kdf_outlen(ctx, p2);
+            case EVP_PKEY_CTRL_EC_KDF_OUTLEN:
+                return EVP_PKEY_CTX_set_ecdh_kdf_outlen(ctx, p1);
+            case EVP_PKEY_CTRL_GET_EC_KDF_UKM:
+                return EVP_PKEY_CTX_get0_ecdh_kdf_ukm(ctx, p2);
+            case EVP_PKEY_CTRL_EC_KDF_UKM:
+                return EVP_PKEY_CTX_set0_ecdh_kdf_ukm(ctx, p2, p1);
+        }
+    }
+# endif
+    if (keytype == -1) {
+        switch (cmd) {
+            case EVP_PKEY_CTRL_MD:
+                return EVP_PKEY_CTX_set_signature_md(ctx, p2);
+            case EVP_PKEY_CTRL_GET_MD:
+                return EVP_PKEY_CTX_get_signature_md(ctx, p2);
+            case EVP_PKEY_CTRL_RSA_PADDING:
+                return EVP_PKEY_CTX_set_rsa_padding(ctx, p1);
+            case EVP_PKEY_CTRL_GET_RSA_PADDING:
+                return EVP_PKEY_CTX_get_rsa_padding(ctx, p2);
+            case EVP_PKEY_CTRL_RSA_OAEP_MD:
+                return EVP_PKEY_CTX_set_rsa_oaep_md(ctx, p2);
+            case EVP_PKEY_CTRL_GET_RSA_OAEP_MD:
+                return EVP_PKEY_CTX_get_rsa_oaep_md(ctx, p2);
+            case EVP_PKEY_CTRL_RSA_MGF1_MD:
+                return EVP_PKEY_CTX_set_rsa_oaep_md(ctx, p2);
+            case EVP_PKEY_CTRL_GET_RSA_MGF1_MD:
+                return EVP_PKEY_CTX_get_rsa_oaep_md(ctx, p2);
+            case EVP_PKEY_CTRL_RSA_OAEP_LABEL:
+                return EVP_PKEY_CTX_set0_rsa_oaep_label(ctx, p2, p1);
+            case EVP_PKEY_CTRL_GET_RSA_OAEP_LABEL:
+                return EVP_PKEY_CTX_get0_rsa_oaep_label(ctx, (unsigned char **)p2);
+            case EVP_PKEY_CTRL_PKCS7_ENCRYPT:
+            case EVP_PKEY_CTRL_PKCS7_DECRYPT:
 # ifndef OPENSSL_NO_CMS
-    case EVP_PKEY_CTRL_CMS_DECRYPT:
-    case EVP_PKEY_CTRL_CMS_ENCRYPT:
+            case EVP_PKEY_CTRL_CMS_DECRYPT:
+            case EVP_PKEY_CTRL_CMS_ENCRYPT:
 # endif
-        if (ctx->pmeth->pkey_id != EVP_PKEY_RSA_PSS)
-            return 1;
-        ERR_raise(ERR_LIB_EVP,
-                  EVP_R_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE);
-        return -2;
+                if (ctx->pmeth->pkey_id != EVP_PKEY_RSA_PSS)
+                    return 1;
+                ERR_raise(ERR_LIB_EVP,
+                          EVP_R_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE);
+                return -2;
+        }
     }
     return 0;
 }
@@ -826,76 +910,43 @@ int EVP_PKEY_CTX_ctrl_uint64(EVP_PKEY_CTX *ctx, int keytype, int optype,
 static int legacy_ctrl_str_to_param(EVP_PKEY_CTX *ctx, const char *name,
                                     const char *value)
 {
+    if (strcmp(name, "rsa_padding_mode") == 0)
+        name = OSSL_ASYM_CIPHER_PARAM_PAD_MODE;
+    else if (strcmp(name, "rsa_mgf1_md") == 0)
+        name = OSSL_ASYM_CIPHER_PARAM_MGF1_DIGEST;
+    else if (strcmp(name, "rsa_oaep_md") == 0)
+        name = OSSL_ASYM_CIPHER_PARAM_OAEP_DIGEST;
+    else if (strcmp(name, "rsa_oaep_label") == 0)
+        name = OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL;
 # ifndef OPENSSL_NO_DH
-    if (strcmp(name, "dh_pad") == 0) {
-        int pad;
-
-        pad = atoi(value);
-        return EVP_PKEY_CTX_set_dh_pad(ctx, pad);
-    }
+    else if (strcmp(name, "dh_pad") == 0)
+        name = OSSL_EXCHANGE_PARAM_PAD;
 # endif
-    if (strcmp(name, "digest") == 0) {
-        int ret;
-        EVP_MD *md;
+# ifndef OPENSSL_NO_EC
+    else if (strcmp(name, "ecdh_cofactor_mode") == 0)
+        name = OSSL_EXCHANGE_PARAM_EC_ECDH_COFACTOR_MODE;
+    else if (strcmp(name, "ecdh_kdf_md") == 0)
+        name = OSSL_EXCHANGE_PARAM_KDF_TYPE;
+# endif
 
-        if (!EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx) || ctx->op.sig.signature == NULL)
+    {
+        /*
+         * TODO(3.0) reduce the code above to only translate known legacy
+         * string to the corresponding core name (see core_names.h), but
+         * otherwise leave it to this code block to do the actual work.
+         */
+        const OSSL_PARAM *settable = EVP_PKEY_CTX_settable_params(ctx);
+        OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+        int rv = 0;
+
+        if (!OSSL_PARAM_allocate_from_text(&params[0], settable, name, value,
+                                           strlen(value)))
             return 0;
-        md = EVP_MD_fetch(ossl_provider_library_context(ctx->op.sig.signature->prov),
-                          value, NULL);
-        if (md == NULL)
-            return 0;
-        ret = EVP_PKEY_CTX_set_signature_md(ctx, md);
-        EVP_MD_meth_free(md);
-        return ret;
+        if (EVP_PKEY_CTX_set_params(ctx, params))
+            rv = 1;
+        OPENSSL_free(params[0].data);
+        return rv;
     }
-
-    if (strcmp(name, "rsa_padding_mode") == 0) {
-        int pm;
-
-        if (strcmp(value, "pkcs1") == 0) {
-            pm = RSA_PKCS1_PADDING;
-        } else if (strcmp(value, "sslv23") == 0) {
-            pm = RSA_SSLV23_PADDING;
-        } else if (strcmp(value, "none") == 0) {
-            pm = RSA_NO_PADDING;
-        } else if (strcmp(value, "oeap") == 0) {
-            pm = RSA_PKCS1_OAEP_PADDING;
-        } else if (strcmp(value, "oaep") == 0) {
-            pm = RSA_PKCS1_OAEP_PADDING;
-        } else if (strcmp(value, "x931") == 0) {
-            pm = RSA_X931_PADDING;
-        } else if (strcmp(value, "pss") == 0) {
-            pm = RSA_PKCS1_PSS_PADDING;
-        } else {
-            ERR_raise(ERR_LIB_RSA, RSA_R_UNKNOWN_PADDING_TYPE);
-            return -2;
-        }
-        return EVP_PKEY_CTX_set_rsa_padding(ctx, pm);
-    }
-
-    if (strcmp(name, "rsa_mgf1_md") == 0)
-        return EVP_PKEY_CTX_set_rsa_mgf1_md_name(ctx, value, NULL);
-
-    if (strcmp(name, "rsa_oaep_md") == 0)
-        return EVP_PKEY_CTX_set_rsa_oaep_md_name(ctx, value, NULL);
-
-    if (strcmp(name, "rsa_oaep_label") == 0) {
-        unsigned char *lab;
-        long lablen;
-        int ret;
-
-        lab = OPENSSL_hexstr2buf(value, &lablen);
-        if (lab == NULL)
-            return 0;
-        ret = EVP_PKEY_CTX_set0_rsa_oaep_label(ctx, lab, lablen);
-        if (ret <= 0)
-            OPENSSL_free(lab);
-        return ret;
-    }
-
-
-
-    return 0;
 }
 
 int EVP_PKEY_CTX_ctrl_str(EVP_PKEY_CTX *ctx,

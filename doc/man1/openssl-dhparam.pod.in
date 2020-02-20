@@ -29,6 +29,9 @@ B<openssl dhparam>
 
 =head1 DESCRIPTION
 
+This command has been deprecated.
+The L<openssl-pkeyparam(1)> command should be used instead.
+
 This command is used to manipulate DH parameter files.
 
 =head1 OPTIONS
@@ -108,19 +111,15 @@ be loaded by calling the get_dhNNNN() function.
 
 =back
 
-=head1 WARNINGS
-
-This command combines the functionality of the L<openssl-dh(1)> and the
-L<openssl-gendh(1)> commands in previous OpenSSL versions.
-The L<openssl-dh(1)> and L<openssl-gendh(1)> commands are retained for now but
-may have different purposes in future versions of OpenSSL.
-
 =head1 NOTES
+
+This command replaces the B<dh> and B<gendh> commands of previous
+releases.
 
 OpenSSL currently only supports the older PKCS#3 DH, not the newer X9.42
 DH.
 
-This program manipulates DH parameters not keys.
+This command manipulates DH parameters not keys.
 
 =head1 BUGS
 
@@ -129,7 +128,12 @@ There should be a way to generate and manipulate DH keys.
 =head1 SEE ALSO
 
 L<openssl(1)>,
+L<openssl-pkeyparam(1)>,
 L<openssl-dsaparam(1)>
+
+=head1 HISTORY
+
+This command was deprecated in OpenSSL 3.0.
 
 =head1 COPYRIGHT
 

@@ -7,6 +7,12 @@
  * https://www.openssl.org/source/license.html
  */
 
+/*
+ * DSA low level APIs are deprecated for public use, but still ok for
+ * internal use.
+ */
+#include "internal/deprecated.h"
+
 #include <openssl/dsa.h>
 #include <openssl/err.h>
 #include "prov/bio.h"             /* ossl_prov_bio_printf() */
@@ -14,9 +20,19 @@
 #include "prov/providercommonerr.h" /* PROV_R_BN_ERROR */
 #include "serializer_local.h"
 
-OSSL_OP_keymgmt_importkey_fn *ossl_prov_get_dsa_importkey(void)
+OSSL_OP_keymgmt_new_fn *ossl_prov_get_keymgmt_dsa_new(void)
 {
-    return ossl_prov_get_importkey(dsa_keymgmt_functions);
+    return ossl_prov_get_keymgmt_new(dsa_keymgmt_functions);
+}
+
+OSSL_OP_keymgmt_free_fn *ossl_prov_get_keymgmt_dsa_free(void)
+{
+    return ossl_prov_get_keymgmt_free(dsa_keymgmt_functions);
+}
+
+OSSL_OP_keymgmt_import_fn *ossl_prov_get_keymgmt_dsa_import(void)
+{
+    return ossl_prov_get_keymgmt_import(dsa_keymgmt_functions);
 }
 
 int ossl_prov_print_dsa(BIO *out, DSA *dsa, enum dsa_print_type type)

@@ -12,6 +12,8 @@
 
 #include <openssl/rsa.h>
 
+RSA *rsa_new_with_ctx(OPENSSL_CTX *libctx);
+
 int rsa_set0_all_params(RSA *r, const STACK_OF(BIGNUM) *primes,
                         const STACK_OF(BIGNUM) *exps,
                         const STACK_OF(BIGNUM) *coeffs);
@@ -22,4 +24,9 @@ int rsa_get0_all_params(RSA *r, STACK_OF(BIGNUM_const) *primes,
 int rsa_padding_check_PKCS1_type_2_TLS(unsigned char *to, size_t tlen,
                                        const unsigned char *from, size_t flen,
                                        int client_version, int alt_version);
+
+int rsa_validate_public(const RSA *key);
+int rsa_validate_private(const RSA *key);
+int rsa_validate_pairwise(const RSA *key);
+
 #endif

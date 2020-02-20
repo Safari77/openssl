@@ -87,7 +87,16 @@ extern "C" {
 #define OSSL_DIGEST_PARAM_FLAGS      "flags"     /* ulong */
 
 /* Known DIGEST names (not a complete list) */
-#define OSSL_DIGEST_NAME_MD5 "MD5"
+#define OSSL_DIGEST_NAME_MD5            "MD5"
+#define OSSL_DIGEST_NAME_SHA1           "SHA1"
+#define OSSL_DIGEST_NAME_SHA2_224       "SHA2-224"
+#define OSSL_DIGEST_NAME_SHA2_256       "SHA2-256"
+#define OSSL_DIGEST_NAME_SHA2_384       "SHA2-384"
+#define OSSL_DIGEST_NAME_SHA2_512       "SHA2-512"
+#define OSSL_DIGEST_NAME_SHA3_224       "SHA3-224"
+#define OSSL_DIGEST_NAME_SHA3_256       "SHA3-256"
+#define OSSL_DIGEST_NAME_SHA3_384       "SHA3-384"
+#define OSSL_DIGEST_NAME_SHA3_512       "SHA3-512"
 #define OSSL_DIGEST_NAME_KECCAK_KMAC128 "KECCAK-KMAC-128"
 #define OSSL_DIGEST_NAME_KECCAK_KMAC256 "KECCAK-KMAC-256"
 
@@ -158,19 +167,25 @@ extern "C" {
 #define OSSL_PKEY_PARAM_BITS                "bits" /* integer */
 #define OSSL_PKEY_PARAM_MAX_SIZE            "max-size" /* integer */
 #define OSSL_PKEY_PARAM_SECURITY_BITS       "security-bits" /* integer */
+#define OSSL_PKEY_PARAM_DIGEST              OSSL_ALG_PARAM_DIGEST
+#define OSSL_PKEY_PARAM_PROPERTIES          OSSL_ALG_PARAM_PROPERTIES
+#define OSSL_PKEY_PARAM_DEFAULT_DIGEST      "default-digest" /* utf8 string */
+#define OSSL_PKEY_PARAM_MANDATORY_DIGEST    "mandatory-digest" /* utf8 string */
+#define OSSL_PKEY_PARAM_PUB_KEY             "pub"
+#define OSSL_PKEY_PARAM_PRIV_KEY            "priv"
 
 /* Diffie-Hellman/DSA Parameters */
 #define OSSL_PKEY_PARAM_FFC_P        "p"
 #define OSSL_PKEY_PARAM_FFC_G        "g"
 #define OSSL_PKEY_PARAM_FFC_Q        "q"
 
-/* Diffie-Hellman Keys */
-#define OSSL_PKEY_PARAM_DH_PUB_KEY   "pub"
-#define OSSL_PKEY_PARAM_DH_PRIV_KEY  "priv"
+/* Elliptic Curve Domain Parameters */
+#define OSSL_PKEY_PARAM_EC_NAME      "curve-name"
 
-/* DSA Keys */
-#define OSSL_PKEY_PARAM_DSA_PUB_KEY  "pub"
-#define OSSL_PKEY_PARAM_DSA_PRIV_KEY "priv"
+/* Elliptic Curve Key Parameters */
+#define OSSL_PKEY_PARAM_USE_COFACTOR_FLAG "use-cofactor-flag"
+#define OSSL_PKEY_PARAM_USE_COFACTOR_ECDH \
+    OSSL_PKEY_PARAM_USE_COFACTOR_FLAG
 
 /* RSA Keys */
 /*
@@ -195,11 +210,32 @@ extern "C" {
 
 /* Key Exchange parameters */
 
-#define OSSL_EXCHANGE_PARAM_PAD      "pad" /* uint */
+#define OSSL_EXCHANGE_PARAM_PAD                   "pad" /* uint */
+#define OSSL_EXCHANGE_PARAM_EC_ECDH_COFACTOR_MODE "ecdh-cofactor-mode" /* int */
+#define OSSL_EXCHANGE_PARAM_KDF_TYPE              "kdf-type" /* utf8_string */
+#define OSSL_EXCHANGE_PARAM_KDF_DIGEST            "kdf-digest" /* utf8_string */
+#define OSSL_EXCHANGE_PARAM_KDF_DIGEST_PROPS      "kdf-digest-props" /* utf8_string */
+#define OSSL_EXCHANGE_PARAM_KDF_OUTLEN            "kdf-outlen" /* size_t */
+
+/*
+ * TODO(3.0): improve this pattern
+ *
+ * Currently the sole internal user of OSSL_EXCHANGE_PARAM_KDF_UKM is
+ * EVP_PKEY_CTX_{set0,get0}_ecdh_kdf_ukm():
+ *      OSSL_EXCHANGE_PARAM_KDF_UKM is handled as a octet_string on set0,
+ *      and as an octet_ptr on get0.
+ *
+ * This pattern is borrowed from the handling of
+ * OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL in
+ * EVP_PKEY_CTX_{set0,get0}_rsa_oaep_label().
+ */
+#define OSSL_EXCHANGE_PARAM_KDF_UKM               "kdf-ukm" /* see note above */
+#define OSSL_EXCHANGE_PARAM_KDF_UKM_LEN           "kdf-ukm-len" /* size_t */
 
 /* Signature parameters */
-#define OSSL_SIGNATURE_PARAM_DIGEST         OSSL_ALG_PARAM_DIGEST
-#define OSSL_SIGNATURE_PARAM_DIGEST_SIZE    "digest-size"
+#define OSSL_SIGNATURE_PARAM_ALGORITHM_ID       "algorithm-id"
+#define OSSL_SIGNATURE_PARAM_DIGEST             OSSL_PKEY_PARAM_DIGEST
+#define OSSL_SIGNATURE_PARAM_PROPERTIES         OSSL_PKEY_PARAM_PROPERTIES
 
 /* Asym cipher parameters */
 #define OSSL_ASYM_CIPHER_PARAM_PAD_MODE                 "pad-mode"

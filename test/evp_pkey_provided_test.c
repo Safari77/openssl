@@ -92,7 +92,7 @@ err:
 static int test_fromdata_rsa(void)
 {
     int ret = 0;
-    EVP_PKEY_CTX *ctx = NULL;
+    EVP_PKEY_CTX *ctx = NULL, *key_ctx = NULL;
     EVP_PKEY *pk = NULL;
     /*
      * 32-bit RSA key, extracted from this command,
@@ -132,11 +132,21 @@ static int test_fromdata_rsa(void)
         || !TEST_int_eq(EVP_PKEY_size(pk), 4))
         goto err;
 
+    if (!TEST_ptr(key_ctx = EVP_PKEY_CTX_new_from_pkey(NULL, pk, "")))
+        goto err;
+
+    if (!TEST_true(EVP_PKEY_check(key_ctx))
+        || !TEST_true(EVP_PKEY_public_check(key_ctx))
+        || !TEST_true(EVP_PKEY_private_check(key_ctx))
+        || !TEST_true(EVP_PKEY_pairwise_check(key_ctx)))
+        goto err;
+
     ret = test_print_key_using_pem(pk)
         | test_print_key_using_serializer(pk);
 
  err:
     EVP_PKEY_free(pk);
+    EVP_PKEY_CTX_free(key_ctx);
     EVP_PKEY_CTX_free(ctx);
 
     return ret;
@@ -168,8 +178,8 @@ static int test_fromdata_dh(void)
         0x2,                     /* G */
     };
     OSSL_PARAM fromdata_params[] = {
-        OSSL_PARAM_ulong(OSSL_PKEY_PARAM_DH_PRIV_KEY, &key_numbers[PRIV_KEY]),
-        OSSL_PARAM_ulong(OSSL_PKEY_PARAM_DH_PUB_KEY, &key_numbers[PUB_KEY]),
+        OSSL_PARAM_ulong(OSSL_PKEY_PARAM_PRIV_KEY, &key_numbers[PRIV_KEY]),
+        OSSL_PARAM_ulong(OSSL_PKEY_PARAM_PUB_KEY, &key_numbers[PUB_KEY]),
         OSSL_PARAM_ulong(OSSL_PKEY_PARAM_FFC_P, &key_numbers[FFC_P]),
         OSSL_PARAM_ulong(OSSL_PKEY_PARAM_FFC_G, &key_numbers[FFC_G]),
         OSSL_PARAM_END

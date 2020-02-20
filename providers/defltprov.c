@@ -372,6 +372,11 @@ static const OSSL_ALGORITHM deflt_keyexch[] = {
 #ifndef OPENSSL_NO_DH
     { "DH:dhKeyAgreement", "default=yes", dh_keyexch_functions },
 #endif
+#ifndef OPENSSL_NO_EC
+    { "ECDH:id-ecPublicKey", "default=yes", ecdh_keyexch_functions },
+    { "X25519", "default=yes", x25519_keyexch_functions },
+    { "X448", "default=yes", x448_keyexch_functions },
+#endif
     { NULL, NULL, NULL }
 };
 
@@ -395,6 +400,11 @@ static const OSSL_ALGORITHM deflt_keymgmt[] = {
     { "DSA:dsaEncryption", "default=yes", dsa_keymgmt_functions },
 #endif
     { "RSA:rsaEncryption", "default=yes", rsa_keymgmt_functions },
+#ifndef OPENSSL_NO_EC
+    { "EC:id-ecPublicKey", "default=yes", ec_keymgmt_functions },
+    { "X25519", "default=yes", x25519_keymgmt_functions },
+    { "X448", "default=yes", x448_keymgmt_functions },
+#endif
     { NULL, NULL, NULL }
 };
 
@@ -417,19 +427,19 @@ static const OSSL_ALGORITHM deflt_serializer[] = {
       dh_priv_text_serializer_functions },
     { "DH", "default=yes,format=text,type=public",
       dh_pub_text_serializer_functions },
-    { "DH", "default=yes,format=text,type=domainparams",
+    { "DH", "default=yes,format=text,type=parameters",
       dh_param_text_serializer_functions },
     { "DH", "default=yes,format=der,type=private",
       dh_priv_der_serializer_functions },
     { "DH", "default=yes,format=der,type=public",
       dh_pub_der_serializer_functions },
-    { "DH", "default=yes,format=der,type=domainparams",
+    { "DH", "default=yes,format=der,type=parameters",
       dh_param_der_serializer_functions },
     { "DH", "default=yes,format=pem,type=private",
       dh_priv_pem_serializer_functions },
     { "DH", "default=yes,format=pem,type=public",
       dh_pub_pem_serializer_functions },
-    { "DH", "default=yes,format=pem,type=domainparams",
+    { "DH", "default=yes,format=pem,type=parameters",
       dh_param_pem_serializer_functions },
 #endif
 
@@ -438,19 +448,19 @@ static const OSSL_ALGORITHM deflt_serializer[] = {
       dsa_priv_text_serializer_functions },
     { "DSA", "default=yes,format=text,type=public",
       dsa_pub_text_serializer_functions },
-    { "DSA", "default=yes,format=text,type=domainparams",
+    { "DSA", "default=yes,format=text,type=parameters",
       dsa_param_text_serializer_functions },
     { "DSA", "default=yes,format=der,type=private",
       dsa_priv_der_serializer_functions },
     { "DSA", "default=yes,format=der,type=public",
       dsa_pub_der_serializer_functions },
-    { "DSA", "default=yes,format=der,type=domainparams",
+    { "DSA", "default=yes,format=der,type=parameters",
       dsa_param_der_serializer_functions },
     { "DSA", "default=yes,format=pem,type=private",
       dsa_priv_pem_serializer_functions },
     { "DSA", "default=yes,format=pem,type=public",
       dsa_pub_pem_serializer_functions },
-    { "DSA", "default=yes,format=pem,type=domainparams",
+    { "DSA", "default=yes,format=pem,type=parameters",
       dsa_param_pem_serializer_functions },
 #endif
 
