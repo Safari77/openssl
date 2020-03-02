@@ -384,7 +384,7 @@ static const OSSL_ALGORITHM deflt_signature[] = {
 #ifndef OPENSSL_NO_DSA
     { "DSA:dsaEncryption", "provider=default", dsa_signature_functions },
 #endif
-    { "RSA:rsaEncryption", "default=yes", rsa_signature_functions },
+    { "RSA:rsaEncryption", "provider=default", rsa_signature_functions },
     { NULL, NULL, NULL }
 };
 
@@ -468,6 +468,34 @@ static const OSSL_ALGORITHM deflt_serializer[] = {
       dsa_pub_pem_serializer_functions },
     { "DSA", "provider=default,fips=yes,format=pem,type=parameters",
       dsa_param_pem_serializer_functions },
+#endif
+
+#ifndef OPENSSL_NO_EC
+    { "X25519", "provider=default,format=text,type=private",
+      x25519_priv_print_serializer_functions },
+    { "X25519", "provider=default,format=text,type=public",
+      x25519_pub_print_serializer_functions },
+    { "X25519", "provider=default,format=der,type=private",
+      x25519_priv_der_serializer_functions },
+    { "X25519", "provider=default,format=der,type=public",
+      x25519_pub_der_serializer_functions },
+    { "X25519", "provider=default,format=pem,type=private",
+      x25519_priv_pem_serializer_functions },
+    { "X25519", "provider=default,format=pem,type=public",
+      x25519_pub_pem_serializer_functions },
+
+    { "X448", "provider=default,format=text,type=private",
+      x448_priv_print_serializer_functions },
+    { "X448", "provider=default,format=text,type=public",
+      x448_pub_print_serializer_functions },
+    { "X448", "provider=default,format=der,type=private",
+      x448_priv_der_serializer_functions },
+    { "X448", "provider=default,format=der,type=public",
+      x448_pub_der_serializer_functions },
+    { "X448", "provider=default,format=pem,type=private",
+      x448_priv_pem_serializer_functions },
+    { "X448", "provider=default,format=pem,type=public",
+      x448_pub_pem_serializer_functions },
 #endif
 
     { NULL, NULL, NULL }
