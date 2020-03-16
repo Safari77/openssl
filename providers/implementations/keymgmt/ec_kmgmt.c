@@ -16,13 +16,14 @@
 #include <openssl/core_numbers.h>
 #include <openssl/core_names.h>
 #include <openssl/bn.h>
-#include <openssl/ec.h>
 #include <openssl/objects.h>
 #include <openssl/params.h>
 #include "crypto/bn.h"
+#include "crypto/ec.h"
 #include "internal/param_build.h"
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
+#include "prov/provider_ctx.h"
 
 static OSSL_OP_keymgmt_new_fn ec_newdata;
 static OSSL_OP_keymgmt_free_fn ec_freedata;
@@ -32,6 +33,7 @@ static OSSL_OP_keymgmt_set_params_fn ec_set_params;
 static OSSL_OP_keymgmt_settable_params_fn ec_settable_params;
 static OSSL_OP_keymgmt_has_fn ec_has;
 static OSSL_OP_keymgmt_match_fn ec_match;
+static OSSL_OP_keymgmt_validate_fn ec_validate;
 static OSSL_OP_keymgmt_import_fn ec_import;
 static OSSL_OP_keymgmt_import_types_fn ec_import_types;
 static OSSL_OP_keymgmt_export_fn ec_export;
@@ -47,10 +49,8 @@ const char *ec_query_operation_name(int operation_id)
     switch (operation_id) {
     case OSSL_OP_KEYEXCH:
         return "ECDH";
-#if 0
     case OSSL_OP_SIGNATURE:
-        return deflt_signature;
-#endif
+        return "ECDSA";
     }
     return NULL;
 }
@@ -80,10 +80,11 @@ int params_to_domparams(EC_KEY *ec, const OSSL_PARAM params[])
 
         if (!OSSL_PARAM_get_utf8_string(param_ec_name, &curve_name, 0)
                 || curve_name == NULL
-                || (curve_nid = OBJ_sn2nid(curve_name)) == NID_undef)
+                || (curve_nid = ec_curve_name2nid(curve_name)) == NID_undef)
             goto err;
 
-        if ((ecg = EC_GROUP_new_by_curve_name(curve_nid)) == NULL)
+        if ((ecg = EC_GROUP_new_by_curve_name_ex(ec_key_get_libctx(ec),
+                                                 curve_nid)) == NULL)
             goto err;
     }
 
@@ -129,10 +130,11 @@ int domparams_to_params(const EC_KEY *ec, OSSL_PARAM_BLD *tmpl)
         /* named curve */
         const char *curve_name = NULL;
 
-        if ((curve_name = OBJ_nid2sn(curve_nid)) == NULL)
+        if ((curve_name = ec_curve_nid2name(curve_nid)) == NULL)
             return 0;
 
-        if (!ossl_param_bld_push_utf8_string(tmpl, OSSL_PKEY_PARAM_EC_NAME, curve_name, 0))
+        if (!ossl_param_bld_push_utf8_string(tmpl, OSSL_PKEY_PARAM_EC_NAME,
+                                             curve_name, 0))
             return 0;
     }
 
@@ -151,6 +153,7 @@ static ossl_inline
 int params_to_key(EC_KEY *ec, const OSSL_PARAM params[], int include_private)
 {
     const OSSL_PARAM *param_priv_key, *param_pub_key;
+    BN_CTX *ctx = NULL;
     BIGNUM *priv_key = NULL;
     unsigned char *pub_key = NULL;
     size_t pub_key_len;
@@ -167,6 +170,9 @@ int params_to_key(EC_KEY *ec, const OSSL_PARAM params[], int include_private)
     param_pub_key =
         OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PUB_KEY);
 
+    ctx = BN_CTX_new_ex(ec_key_get_libctx(ec));
+    if (ctx == NULL)
+        goto err;
     /*
      * We want to have at least a public key either way, so we end up
      * requiring it unconditionally.
@@ -176,7 +182,7 @@ int params_to_key(EC_KEY *ec, const OSSL_PARAM params[], int include_private)
                                             (void **)&pub_key, 0, &pub_key_len)
             || (pub_point = EC_POINT_new(ecg)) == NULL
             || !EC_POINT_oct2point(ecg, pub_point,
-                                   pub_key, pub_key_len, NULL))
+                                   pub_key, pub_key_len, ctx))
         goto err;
 
     if (param_priv_key != NULL && include_private) {
@@ -222,7 +228,7 @@ int params_to_key(EC_KEY *ec, const OSSL_PARAM params[], int include_private)
 
         fixed_top = bn_get_top(order) + 2;
 
-        if ((priv_key = BN_new()) == NULL)
+        if ((priv_key = BN_secure_new()) == NULL)
             goto err;
         if (bn_wexpand(priv_key, fixed_top) == NULL)
             goto err;
@@ -242,6 +248,7 @@ int params_to_key(EC_KEY *ec, const OSSL_PARAM params[], int include_private)
     ok = 1;
 
  err:
+    BN_CTX_free(ctx);
     BN_clear_free(priv_key);
     OPENSSL_free(pub_key);
     EC_POINT_free(pub_point);
@@ -410,7 +417,7 @@ int otherparams_to_params(const EC_KEY *ec, OSSL_PARAM_BLD *tmpl)
 static
 void *ec_newdata(void *provctx)
 {
-    return EC_KEY_new();
+    return EC_KEY_new_ex(PROV_LIBRARY_CONTEXT_OF(provctx));
 }
 
 static
@@ -473,7 +480,7 @@ static
 int ec_import(void *keydata, int selection, const OSSL_PARAM params[])
 {
     EC_KEY *ec = keydata;
-    int ok = 0;
+    int ok = 1;
 
     if (ec == NULL)
         return 0;
@@ -730,6 +737,35 @@ int ec_set_params(void *key, const OSSL_PARAM params[])
     return 1;
 }
 
+static
+int ec_validate(void *keydata, int selection)
+{
+    EC_KEY *eck = keydata;
+    int ok = 0;
+    BN_CTX *ctx = BN_CTX_new_ex(ec_key_get_libctx(eck));
+
+    if (ctx == NULL)
+        return 0;
+
+    if ((selection & EC_POSSIBLE_SELECTIONS) != 0)
+        ok = 1;
+
+    if ((selection & OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS) != 0)
+        ok = ok && EC_GROUP_check(EC_KEY_get0_group(eck), ctx);
+
+    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
+        ok = ok && ec_key_public_check(eck, ctx);
+
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
+        ok = ok && ec_key_private_check(eck);
+
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == OSSL_KEYMGMT_SELECT_KEYPAIR)
+        ok = ok && ec_key_pairwise_check(eck, ctx);
+
+    BN_CTX_free(ctx);
+    return ok;
+}
+
 const OSSL_DISPATCH ec_keymgmt_functions[] = {
     { OSSL_FUNC_KEYMGMT_NEW, (void (*)(void))ec_newdata },
     { OSSL_FUNC_KEYMGMT_FREE, (void (*)(void))ec_freedata },
@@ -739,6 +775,7 @@ const OSSL_DISPATCH ec_keymgmt_functions[] = {
     { OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, (void (*) (void))ec_settable_params },
     { OSSL_FUNC_KEYMGMT_HAS, (void (*)(void))ec_has },
     { OSSL_FUNC_KEYMGMT_MATCH, (void (*)(void))ec_match },
+    { OSSL_FUNC_KEYMGMT_VALIDATE, (void (*)(void))ec_validate },
     { OSSL_FUNC_KEYMGMT_IMPORT, (void (*)(void))ec_import },
     { OSSL_FUNC_KEYMGMT_IMPORT_TYPES, (void (*)(void))ec_import_types },
     { OSSL_FUNC_KEYMGMT_EXPORT, (void (*)(void))ec_export },

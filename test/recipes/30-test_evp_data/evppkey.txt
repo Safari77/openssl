@@ -635,7 +635,7 @@ Result = KEYOP_INIT_ERROR
 Reason = invalid salt length
 
 
-Title = EC tests
+Title = ECDSA tests
 
 Verify = P-256
 Availablein = default
@@ -18563,7 +18563,7 @@ KeyGen = rsaEncryption
 Availablein = default
 Ctrl = rsa_keygen_bits:128
 KeyName = tmprsa
-Result = PKEY_CTRL_INVALID
+Result = KEYGEN_GENERATE_ERROR
 Reason = key size too small
 
 # RSA-PSS with restrictions, should succeed.
