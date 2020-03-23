@@ -185,8 +185,8 @@ OSSL_CMP_MSG *ossl_cmp_msg_create(OSSL_CMP_CTX *ctx, int bodytype)
     (sk_GENERAL_NAME_num((ctx)->subjectAltNames) > 0 \
          || OSSL_CMP_CTX_reqExtensions_have_SAN(ctx) == 1)
 
-static X509_NAME *determine_subj(OSSL_CMP_CTX *ctx, X509 *refcert,
-                                 int bodytype)
+static const X509_NAME *determine_subj(OSSL_CMP_CTX *ctx, X509 *refcert,
+                                       int bodytype)
 {
     if (ctx->subjectName != NULL)
         return ctx->subjectName;
@@ -212,7 +212,7 @@ static OSSL_CRMF_MSG *crm_new(OSSL_CMP_CTX *ctx, int bodytype, int rid)
     /* refcert defaults to current client cert */
     EVP_PKEY *rkey = OSSL_CMP_CTX_get0_newPkey(ctx, 0);
     STACK_OF(GENERAL_NAME) *default_sans = NULL;
-    X509_NAME *subject = determine_subj(ctx, refcert, bodytype);
+    const X509_NAME *subject = determine_subj(ctx, refcert, bodytype);
     int crit = ctx->setSubjectAltNameCritical || subject == NULL;
     /* RFC5280: subjectAltName MUST be critical if subject is null */
     X509_EXTENSIONS *exts = NULL;
@@ -976,18 +976,18 @@ OSSL_CMP_MSG *ossl_cmp_msg_load(const char *file)
 
     if ((bio = BIO_new_file(file, "rb")) == NULL)
         return NULL;
-    msg = OSSL_d2i_CMP_MSG_bio(bio, NULL);
+    msg = d2i_OSSL_CMP_MSG_bio(bio, NULL);
     BIO_free(bio);
     return msg;
 }
 
-OSSL_CMP_MSG *OSSL_d2i_CMP_MSG_bio(BIO *bio, OSSL_CMP_MSG **msg)
+OSSL_CMP_MSG *d2i_OSSL_CMP_MSG_bio(BIO *bio, OSSL_CMP_MSG **msg)
 {
     return ASN1_d2i_bio_of(OSSL_CMP_MSG, OSSL_CMP_MSG_new,
                            d2i_OSSL_CMP_MSG, bio, msg);
 }
 
-int OSSL_i2d_CMP_MSG_bio(BIO *bio, const OSSL_CMP_MSG *msg)
+int i2d_OSSL_CMP_MSG_bio(BIO *bio, const OSSL_CMP_MSG *msg)
 {
     return ASN1_i2d_bio_of(OSSL_CMP_MSG, i2d_OSSL_CMP_MSG, bio, msg);
 }

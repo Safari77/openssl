@@ -4967,8 +4967,8 @@ OSSL_CMP_PKISI_it                       ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_PKISI_dup                      ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_snprint_PKIStatusInfo          ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_STATUSINFO_new                 ?	3_0_0	EXIST::FUNCTION:CMP
-OSSL_d2i_CMP_MSG_bio                    ?	3_0_0	EXIST::FUNCTION:CMP
-OSSL_i2d_CMP_MSG_bio                    ?	3_0_0	EXIST::FUNCTION:CMP
+d2i_OSSL_CMP_MSG_bio                    ?	3_0_0	EXIST::FUNCTION:CMP
+i2d_OSSL_CMP_MSG_bio                    ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_SRV_process_request            ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_server_perform             ?	3_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_SRV_CTX_new                    ?	3_0_0	EXIST::FUNCTION:CMP
@@ -4984,3 +4984,6 @@ EVP_PKEY_gen                            ?	3_0_0	EXIST::FUNCTION:
 EVP_PKEY_CTX_set_rsa_keygen_bits        ?	3_0_0	EXIST::FUNCTION:RSA
 EVP_PKEY_CTX_set_rsa_keygen_pubexp      ?	3_0_0	EXIST::FUNCTION:RSA
 EVP_PKEY_CTX_set_rsa_keygen_primes      ?	3_0_0	EXIST::FUNCTION:RSA
+NCONF_new_with_libctx                   ?	3_0_0	EXIST::FUNCTION:
+CONF_modules_load_file_with_libctx      ?	3_0_0	EXIST::FUNCTION:
+OPENSSL_CTX_load_config                 ?	3_0_0	EXIST::FUNCTION:
