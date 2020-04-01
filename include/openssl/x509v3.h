@@ -230,6 +230,13 @@ typedef struct SXNET_st {
     STACK_OF(SXNETID) *ids;
 } SXNET;
 
+typedef struct ISSUER_SIGN_TOOL_st {
+    ASN1_UTF8STRING *signTool;
+    ASN1_UTF8STRING *cATool;
+    ASN1_UTF8STRING *signToolCert;
+    ASN1_UTF8STRING *cAToolCert;
+} ISSUER_SIGN_TOOL;
+
 typedef struct NOTICEREF_st {
     ASN1_STRING *organization;
     STACK_OF(ASN1_INTEGER) *noticenos;
@@ -458,6 +465,8 @@ DECLARE_ASN1_FUNCTIONS(BASIC_CONSTRAINTS)
 DECLARE_ASN1_FUNCTIONS(SXNET)
 DECLARE_ASN1_FUNCTIONS(SXNETID)
 
+DECLARE_ASN1_FUNCTIONS(ISSUER_SIGN_TOOL)
+
 int SXNET_add_id_asc(SXNET **psx, const char *zone, const char *user, int userlen);
 int SXNET_add_id_ulong(SXNET **psx, unsigned long lzone, const char *user,
                        int userlen);
@@ -563,6 +572,9 @@ GENERAL_NAME *v2i_GENERAL_NAME_ex(GENERAL_NAME *out,
                                   const X509V3_EXT_METHOD *method,
                                   X509V3_CTX *ctx, CONF_VALUE *cnf,
                                   int is_nc);
+
+int X509v3_cache_extensions(X509 *x, OPENSSL_CTX *libctx, const char *propq);
+
 void X509V3_conf_free(CONF_VALUE *val);
 
 X509_EXTENSION *X509V3_EXT_nconf_nid(CONF *conf, X509V3_CTX *ctx, int ext_nid,
