@@ -338,7 +338,7 @@ static int ssl_set_cert(CERT *c, X509 *x)
         return 0;
     }
 #ifndef OPENSSL_NO_EC
-    if (i == SSL_PKEY_ECC && !EC_KEY_can_sign(EVP_PKEY_get0_EC_KEY(pkey))) {
+    if (i == SSL_PKEY_ECC && !EVP_PKEY_can_sign(pkey)) {
         SSLerr(SSL_F_SSL_SET_CERT, SSL_R_ECC_CERT_NOT_FOR_SIGNING);
         return 0;
     }
@@ -1055,8 +1055,14 @@ static int ssl_set_cert_and_key(SSL *ssl, SSL_CTX *ctx, X509 *x509, EVP_PKEY *pr
     int j;
     int rv;
     CERT *c = ssl != NULL ? ssl->cert : ctx->cert;
+    SSL_CTX *actualctx = ssl == NULL ? ctx : ssl->ctx;
     STACK_OF(X509) *dup_chain = NULL;
     EVP_PKEY *pubkey = NULL;
+
+    if (!X509v3_cache_extensions(x509, actualctx->libctx, actualctx->propq)) {
+        SSLerr(0, ERR_R_X509_LIB);
+        goto out;
+    }
 
     /* Do all security checks before anything else */
     rv = ssl_security_cert(ssl, ctx, x509, 0, 1);
