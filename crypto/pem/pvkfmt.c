@@ -1,5 +1,5 @@
 /*
- * Copyright 2005-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2005-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -882,9 +882,9 @@ int i2b_PVK_bio(BIO *out, const EVP_PKEY *pk, int enclevel,
     wrlen = BIO_write(out, tmp, outlen);
     OPENSSL_free(tmp);
     if (wrlen == outlen) {
-        PEMerr(PEM_F_I2B_PVK_BIO, PEM_R_BIO_WRITE_FAILURE);
         return outlen;
     }
+    PEMerr(PEM_F_I2B_PVK_BIO, PEM_R_BIO_WRITE_FAILURE);
     return -1;
 }
 

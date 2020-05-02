@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -16,7 +16,7 @@
 #include "internal/provider.h"
 #include "evp_local.h"
 
-#ifndef FIPS_MODE
+#ifndef FIPS_MODULE
 
 static int update(EVP_MD_CTX *ctx, const void *data, size_t datalen)
 {
@@ -152,10 +152,16 @@ static int do_sigver_init(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
         if (mdname == NULL)
             mdname = canon_mdname(EVP_MD_name(type));
     } else {
-        if (mdname == NULL
-            && EVP_PKEY_get_default_digest_name(locpctx->pkey, locmdname,
-                                                sizeof(locmdname)))
-            mdname = canon_mdname(locmdname);
+        if (mdname == NULL) {
+            if (evp_keymgmt_util_get_deflt_digest_name(tmp_keymgmt, provkey,
+                                                       locmdname,
+                                                       sizeof(locmdname)) > 0) {
+                mdname = canon_mdname(locmdname);
+            } else {
+                EVPerr(EVP_F_DO_SIGVER_INIT, EVP_R_NO_DEFAULT_DIGEST);
+                return 0;
+            }
+        }
 
         if (mdname != NULL) {
             /*
@@ -311,11 +317,13 @@ int EVP_DigestSignUpdate(EVP_MD_CTX *ctx, const void *data, size_t dsize)
                                                       data, dsize);
 
  legacy:
-    /* do_sigver_init() checked that |digest_custom| is non-NULL */
-    if (pctx->flag_call_digest_custom
-        && !ctx->pctx->pmeth->digest_custom(ctx->pctx, ctx))
-        return 0;
-    pctx->flag_call_digest_custom = 0;
+    if (pctx != NULL) {
+        /* do_sigver_init() checked that |digest_custom| is non-NULL */
+        if (pctx->flag_call_digest_custom
+            && !ctx->pctx->pmeth->digest_custom(ctx->pctx, ctx))
+            return 0;
+        pctx->flag_call_digest_custom = 0;
+    }
 
     return EVP_DigestUpdate(ctx, data, dsize);
 }
@@ -339,16 +347,18 @@ int EVP_DigestVerifyUpdate(EVP_MD_CTX *ctx, const void *data, size_t dsize)
                                                         data, dsize);
 
  legacy:
-    /* do_sigver_init() checked that |digest_custom| is non-NULL */
-    if (pctx->flag_call_digest_custom
-        && !ctx->pctx->pmeth->digest_custom(ctx->pctx, ctx))
-        return 0;
-    pctx->flag_call_digest_custom = 0;
+    if (pctx != NULL) {
+        /* do_sigver_init() checked that |digest_custom| is non-NULL */
+        if (pctx->flag_call_digest_custom
+            && !ctx->pctx->pmeth->digest_custom(ctx->pctx, ctx))
+            return 0;
+        pctx->flag_call_digest_custom = 0;
+    }
 
     return EVP_DigestUpdate(ctx, data, dsize);
 }
 
-#ifndef FIPS_MODE
+#ifndef FIPS_MODULE
 int EVP_DigestSignFinal(EVP_MD_CTX *ctx, unsigned char *sigret,
                         size_t *siglen)
 {
@@ -544,4 +554,4 @@ int EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sigret,
         return -1;
     return EVP_DigestVerifyFinal(ctx, sigret, siglen);
 }
-#endif /* FIPS_MODE */
+#endif /* FIPS_MODULE */

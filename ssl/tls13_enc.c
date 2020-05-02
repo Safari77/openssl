@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -608,6 +608,7 @@ int tls13_change_cipher_state(SSL *s, int which)
                 SSLfatal(s, SSL_AD_INTERNAL_ERROR,
                          SSL_F_TLS13_CHANGE_CIPHER_STATE,
                          SSL_R_ALGORITHM_FETCH_FAILED);
+                EVP_MD_CTX_free(mdctx);
                 goto err;
             }
 

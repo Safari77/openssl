@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2000-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -86,6 +86,8 @@ struct evp_keymgmt_st {
     OSSL_OP_keymgmt_gen_set_template_fn *gen_set_template;
     OSSL_OP_keymgmt_gen_set_params_fn *gen_set_params;
     OSSL_OP_keymgmt_gen_settable_params_fn *gen_settable_params;
+    OSSL_OP_keymgmt_gen_get_params_fn *gen_get_params;
+    OSSL_OP_keymgmt_gen_gettable_params_fn *gen_gettable_params;
     OSSL_OP_keymgmt_gen_fn *gen;
     OSSL_OP_keymgmt_gen_cleanup_fn *gen_cleanup;
 

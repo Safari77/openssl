@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -313,7 +313,7 @@ static int rsa_sign(void *vprsactx, unsigned char *sig, size_t *siglen,
             return 0;
         }
 
-#ifndef FIPS_MODE
+#ifndef FIPS_MODULE
         if (EVP_MD_is_a(prsactx->md, OSSL_DIGEST_NAME_MDC2)) {
             unsigned int sltmp;
 
@@ -407,7 +407,7 @@ static int rsa_sign(void *vprsactx, unsigned char *sig, size_t *siglen,
                                   prsactx->pad_mode);
     }
 
-#ifndef FIPS_MODE
+#ifndef FIPS_MODULE
  end:
 #endif
     if (ret <= 0) {

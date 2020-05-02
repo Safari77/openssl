@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -50,10 +50,12 @@ extern "C" {
 #   ifndef OPENSSL_RSA_MAX_PUBEXP_BITS
 #    define OPENSSL_RSA_MAX_PUBEXP_BITS    64
 #   endif
+#  endif /* OPENSSL_NO_DEPRECATED_3_0 */
 
-#   define RSA_3   0x3L
-#   define RSA_F4  0x10001L
+#  define RSA_3   0x3L
+#  define RSA_F4  0x10001L
 
+#  ifndef OPENSSL_NO_DEPRECATED_3_0
 /* based on RFC 8017 appendix A.1.2 */
 #   define RSA_ASN1_VERSION_DEFAULT        0
 #   define RSA_ASN1_VERSION_MULTI          1
@@ -190,7 +192,7 @@ int EVP_PKEY_CTX_get0_rsa_oaep_label(EVP_PKEY_CTX *ctx, unsigned char **label);
 
 RSA *RSA_new(void);
 DEPRECATEDIN_3_0(RSA *RSA_new_method(ENGINE *engine))
-DEPRECATEDIN_3_0(int RSA_bits(const RSA *rsa))
+int RSA_bits(const RSA *rsa);
 DEPRECATEDIN_3_0(int RSA_size(const RSA *rsa))
 DEPRECATEDIN_3_0(int RSA_security_bits(const RSA *rsa))
 

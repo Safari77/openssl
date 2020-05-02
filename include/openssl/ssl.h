@@ -238,8 +238,8 @@ typedef struct srtp_protection_profile_st {
     const char *name;
     unsigned long id;
 } SRTP_PROTECTION_PROFILE;
+DEFINE_OR_DECLARE_STACK_OF(SRTP_PROTECTION_PROFILE)
 
-DEFINE_STACK_OF(SRTP_PROTECTION_PROFILE)
 
 typedef int (*tls_session_ticket_ext_cb_fn)(SSL *s, const unsigned char *data,
                                             int len, void *arg);
@@ -979,8 +979,8 @@ extern "C" {
  * These need to be after the above set of includes due to a compiler bug
  * in VisualStudio 2015
  */
-DEFINE_STACK_OF_CONST(SSL_CIPHER)
-DEFINE_STACK_OF(SSL_COMP)
+DEFINE_OR_DECLARE_STACK_OF(SSL_CIPHER)
+DEFINE_OR_DECLARE_STACK_OF(SSL_COMP)
 
 /* compatibility */
 # define SSL_set_app_data(s,arg)         (SSL_set_ex_data(s,0,(char *)(arg)))
@@ -1417,7 +1417,7 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 # define SSL_get1_groups(s, glist) \
         SSL_ctrl(s,SSL_CTRL_GET_GROUPS,0,(int*)(glist))
 # define SSL_CTX_set1_groups(ctx, glist, glistlen) \
-        SSL_CTX_ctrl(ctx,SSL_CTRL_SET_GROUPS,glistlen,(char *)(glist))
+        SSL_CTX_ctrl(ctx,SSL_CTRL_SET_GROUPS,glistlen,(int *)(glist))
 # define SSL_CTX_set1_groups_list(ctx, s) \
         SSL_CTX_ctrl(ctx,SSL_CTRL_SET_GROUPS_LIST,0,(char *)(s))
 # define SSL_set1_groups(s, glist, glistlen) \
@@ -1959,6 +1959,7 @@ int SSL_get_key_update_type(const SSL *s);
 int SSL_renegotiate(SSL *s);
 int SSL_renegotiate_abbreviated(SSL *s);
 __owur int SSL_renegotiate_pending(const SSL *s);
+int SSL_new_session_ticket(SSL *s);
 int SSL_shutdown(SSL *s);
 __owur int SSL_verify_client_post_handshake(SSL *s);
 void SSL_CTX_set_post_handshake_auth(SSL_CTX *ctx, int val);
