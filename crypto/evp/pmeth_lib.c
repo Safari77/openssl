@@ -613,12 +613,6 @@ int EVP_PKEY_CTX_get_params(EVP_PKEY_CTX *ctx, OSSL_PARAM *params)
             && ctx->op.ciph.cipher->get_ctx_params != NULL)
         return ctx->op.ciph.cipher->get_ctx_params(ctx->op.ciph.ciphprovctx,
                                                    params);
-    if (EVP_PKEY_CTX_IS_GEN_OP(ctx)
-        && ctx->op.keymgmt.genctx != NULL
-        && ctx->keymgmt != NULL
-        && ctx->keymgmt->gen_get_params != NULL)
-        return evp_keymgmt_gen_get_params(ctx->keymgmt, ctx->op.keymgmt.genctx,
-                                          params);
     return 0;
 }
 
@@ -632,12 +626,10 @@ const OSSL_PARAM *EVP_PKEY_CTX_gettable_params(EVP_PKEY_CTX *ctx)
             && ctx->op.sig.signature != NULL
             && ctx->op.sig.signature->gettable_ctx_params != NULL)
         return ctx->op.sig.signature->gettable_ctx_params();
-
     if (EVP_PKEY_CTX_IS_ASYM_CIPHER_OP(ctx)
             && ctx->op.ciph.cipher != NULL
             && ctx->op.ciph.cipher->gettable_ctx_params != NULL)
         return ctx->op.ciph.cipher->gettable_ctx_params();
-
     return NULL;
 }
 
@@ -656,8 +648,7 @@ const OSSL_PARAM *EVP_PKEY_CTX_settable_params(EVP_PKEY_CTX *ctx)
             && ctx->op.ciph.cipher->settable_ctx_params != NULL)
         return ctx->op.ciph.cipher->settable_ctx_params();
     if (EVP_PKEY_CTX_IS_GEN_OP(ctx)
-            && ctx->keymgmt != NULL
-            && ctx->keymgmt->gen_settable_params != NULL)
+            && ctx->keymgmt != NULL)
         return evp_keymgmt_gen_settable_params(ctx->keymgmt);
 
     return NULL;
@@ -1026,6 +1017,12 @@ static int legacy_ctrl_str_to_param(EVP_PKEY_CTX *ctx, const char *name,
         name = OSSL_PKEY_PARAM_RSA_E;
     else if (strcmp(name, "rsa_keygen_primes") == 0)
         name = OSSL_PKEY_PARAM_RSA_PRIMES;
+    else if (strcmp(name, "rsa_pss_keygen_md") == 0)
+        name = OSSL_PKEY_PARAM_RSA_DIGEST;
+    else if (strcmp(name, "rsa_pss_keygen_mgf1_md") == 0)
+        name = OSSL_PKEY_PARAM_RSA_MGF1_DIGEST;
+    else if (strcmp(name, "rsa_pss_keygen_saltlen") == 0)
+        name = OSSL_PKEY_PARAM_RSA_PSS_SALTLEN;
 # ifndef OPENSSL_NO_DSA
     else if (strcmp(name, "dsa_paramgen_bits") == 0)
         name = OSSL_PKEY_PARAM_FFC_PBITS;
@@ -1075,7 +1072,8 @@ static int legacy_ctrl_str_to_param(EVP_PKEY_CTX *ctx, const char *name,
         if (!OSSL_PARAM_allocate_from_text(&params[0], settable, name, value,
                                            strlen(value), &exists)) {
             if (!exists) {
-                ERR_raise(ERR_LIB_EVP, EVP_R_COMMAND_NOT_SUPPORTED);
+                ERR_raise_data(ERR_LIB_EVP, EVP_R_COMMAND_NOT_SUPPORTED,
+                               "name=%s,value=%s", name, value);
                 return -2;
             }
             return 0;
