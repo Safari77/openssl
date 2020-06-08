@@ -438,10 +438,6 @@ X509 *load_cert_pass(const char *uri, int maybe_stdin,
 
     if (desc == NULL)
         desc = "certificate";
-    if (uri == NULL) {
-        unbuffer(stdin);
-        uri = "";
-    }
     (void)load_key_cert_crl(uri, maybe_stdin, pass, desc, NULL, &cert, NULL);
     if (cert == NULL) {
         BIO_printf(bio_err, "Unable to load %s\n", desc);
@@ -453,7 +449,7 @@ X509 *load_cert_pass(const char *uri, int maybe_stdin,
 /* the format parameter is meanwhile not needed anymore and thus ignored */
 X509 *load_cert(const char *uri, int format, const char *desc)
 {
-    return load_cert_pass(uri, 0, NULL, desc);
+    return load_cert_pass(uri, 1, NULL, desc);
 }
 
 /* the format parameter is meanwhile not needed anymore and thus ignored */
@@ -671,16 +667,24 @@ static int load_certs_crls(const char *file, int format,
     return rv;
 }
 
+void app_bail_out(char *fmt, ...)
+{
+    va_list args;
+
+    va_start(args, fmt);
+    BIO_vprintf(bio_err, fmt, args);
+    va_end(args);
+    ERR_print_errors(bio_err);
+    exit(1);
+}
+
 void* app_malloc(int sz, const char *what)
 {
     void *vp = OPENSSL_malloc(sz);
 
-    if (vp == NULL) {
-        BIO_printf(bio_err, "%s: Could not allocate %d bytes for %s\n",
-                opt_getprog(), sz, what);
-        ERR_print_errors(bio_err);
-        exit(1);
-    }
+    if (vp == NULL)
+        app_bail_out("%s: Could not allocate %d bytes for %s\n",
+                     opt_getprog(), sz, what);
     return vp;
 }
 
@@ -2230,70 +2234,23 @@ double app_tminterval(int stop, int usertime)
     return ret;
 }
 
-#elif defined(OPENSSL_SYSTEM_VMS)
-# include <time.h>
-# include <times.h>
-
-double app_tminterval(int stop, int usertime)
-{
-    static clock_t tmstart;
-    double ret = 0;
-    clock_t now;
-# ifdef __TMS
-    struct tms rus;
-
-    now = times(&rus);
-    if (usertime)
-        now = rus.tms_utime;
-# else
-    if (usertime)
-        now = clock();          /* sum of user and kernel times */
-    else {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        now = (clock_t)((unsigned long long)tv.tv_sec * CLK_TCK +
-                        (unsigned long long)tv.tv_usec * (1000000 / CLK_TCK)
-            );
-    }
-# endif
-    if (stop == TM_START)
-        tmstart = now;
-    else
-        ret = (now - tmstart) / (double)(CLK_TCK);
-
-    return ret;
-}
-
 #elif defined(_SC_CLK_TCK)      /* by means of unistd.h */
 # include <sys/times.h>
 
 double app_tminterval(int stop, int usertime)
 {
     double ret = 0;
-    clock_t now;
-    static clock_t tmstart;
-    long int tck = sysconf(_SC_CLK_TCK);
-# ifdef __TMS
     struct tms rus;
+    clock_t now = times(&rus);
+    static clock_t tmstart;
 
-    now = times(&rus);
     if (usertime)
         now = rus.tms_utime;
-# else
-    if (usertime)
-        now = clock();          /* sum of user and kernel times */
-    else {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        now = (clock_t)((unsigned long long)tv.tv_sec * tck +
-                        (unsigned long long)tv.tv_usec * (1000000 / tck)
-            );
-    }
-# endif
 
     if (stop == TM_START) {
         tmstart = now;
     } else {
+        long int tck = sysconf(_SC_CLK_TCK);
         ret = (now - tmstart) / (double)tck;
     }
 
