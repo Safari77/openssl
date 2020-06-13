@@ -23,6 +23,11 @@ OpenSSL 3.0
 
 ### Changes between 1.1.1 and 3.0 [xx XXX xxxx]
 
+ * Handshake now fails if Extended Master Secret extension is dropped
+   on renegotiation.
+
+   *Tomas Mraz*
+
  * Dropped interactive mode from the 'openssl' program.  From now on,
    the `openssl` command without arguments is equivalent to `openssl
    help`.
@@ -356,8 +361,8 @@ OpenSSL 3.0
    and HMAC_CTX_get_md.
 
    Use of these low level functions has been informally discouraged for a long
-   time.  Instead applications should use L<EVP_MAC_CTX_new(3)>,
-   L<EVP_MAC_CTX_free(3)>, L<EVP_MAC_init(3)>, L<EVP_MAC_update(3)>
+   time.  Instead applications should use L<EVP_MAC_new_ctx(3)>,
+   L<EVP_MAC_free_ctx(3)>, L<EVP_MAC_init(3)>, L<EVP_MAC_update(3)>
    and L<EVP_MAC_final(3)>.
 
    *Paul Dale*
@@ -380,8 +385,8 @@ OpenSSL 3.0
    CMAC_CTX_copy, CMAC_Init, CMAC_Update, CMAC_Final and CMAC_resume.
 
    Use of these low level functions has been informally discouraged for a long
-   time.  Instead applications should use L<EVP_MAC_CTX_new(3)>,
-   L<EVP_MAC_CTX_free(3)>, L<EVP_MAC_init(3)>, L<EVP_MAC_update(3)>
+   time.  Instead applications should use L<EVP_MAC_new_ctx(3)>,
+   L<EVP_MAC_free_ctx(3)>, L<EVP_MAC_init(3)>, L<EVP_MAC_update(3)>
    and L<EVP_MAC_final(3)>.
 
    *Paul Dale*

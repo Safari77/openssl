@@ -845,8 +845,6 @@ EVP_F_EVP_KEYEXCH_FETCH:245:EVP_KEYEXCH_fetch
 EVP_F_EVP_KEYEXCH_FROM_DISPATCH:244:evp_keyexch_from_dispatch
 EVP_F_EVP_MAC_CTRL:209:EVP_MAC_ctrl
 EVP_F_EVP_MAC_CTRL_STR:210:EVP_MAC_ctrl_str
-EVP_F_EVP_MAC_CTX_DUP:211:EVP_MAC_CTX_dup
-EVP_F_EVP_MAC_CTX_NEW:213:EVP_MAC_CTX_new
 EVP_F_EVP_MAC_INIT:212:EVP_MAC_init
 EVP_F_EVP_MD_BLOCK_SIZE:232:EVP_MD_block_size
 EVP_F_EVP_MD_CTX_COPY_EX:110:EVP_MD_CTX_copy_ex
@@ -2118,6 +2116,7 @@ CMP_R_ERROR_PROTECTING_MESSAGE:127:error protecting message
 CMP_R_ERROR_SETTING_CERTHASH:128:error setting certhash
 CMP_R_ERROR_UNEXPECTED_CERTCONF:160:error unexpected certconf
 CMP_R_ERROR_VALIDATING_PROTECTION:140:error validating protection
+CMP_R_ERROR_VALIDATING_SIGNATURE:171:error validating signature
 CMP_R_FAILED_EXTRACTING_PUBKEY:141:failed extracting pubkey
 CMP_R_FAILURE_OBTAINING_RANDOM:110:failure obtaining random
 CMP_R_FAIL_INFO_OUT_OF_RANGE:129:fail info out of range
@@ -2341,6 +2340,7 @@ CT_R_SCT_UNSUPPORTED_VERSION:115:sct unsupported version
 CT_R_UNRECOGNIZED_SIGNATURE_NID:101:unrecognized signature nid
 CT_R_UNSUPPORTED_ENTRY_TYPE:102:unsupported entry type
 CT_R_UNSUPPORTED_VERSION:103:unsupported version
+DH_R_BAD_FFC_PARAMETERS:127:bad ffc parameters
 DH_R_BAD_GENERATOR:101:bad generator
 DH_R_BN_DECODE_ERROR:109:bn decode error
 DH_R_BN_ERROR:106:bn error
@@ -2368,6 +2368,7 @@ DH_R_PARAMETER_ENCODING_ERROR:105:parameter encoding error
 DH_R_PEER_KEY_ERROR:111:peer key error
 DH_R_SHARED_INFO_ERROR:113:shared info error
 DH_R_UNABLE_TO_CHECK_GENERATOR:121:unable to check generator
+DSA_R_BAD_FFC_PARAMETERS:114:bad ffc parameters
 DSA_R_BAD_Q_VALUE:102:bad q value
 DSA_R_BN_DECODE_ERROR:108:bn decode error
 DSA_R_BN_ERROR:109:bn error
