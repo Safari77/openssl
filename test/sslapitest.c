@@ -28,7 +28,7 @@
 #include <openssl/aes.h>
 #include <openssl/rand.h>
 #include <openssl/core_names.h>
-#include <openssl/core_numbers.h>
+#include <openssl/core_dispatch.h>
 #include <openssl/provider.h>
 
 #include "ssltestlib.h"
@@ -42,6 +42,11 @@
 OSSL_provider_init_fn filter_provider_init;
 int filter_provider_set_filter(int operation, const char *name);
 
+/* Defined in tls-provider.c */
+int tls_provider_init(const OSSL_CORE_HANDLE *handle,
+                      const OSSL_DISPATCH *in,
+                      const OSSL_DISPATCH **out,
+                      void **provctx);
 DEFINE_STACK_OF(OCSP_RESPID)
 DEFINE_STACK_OF(X509)
 DEFINE_STACK_OF(X509_NAME)
@@ -1589,6 +1594,119 @@ static int test_large_message_dtls(void)
                                       DTLS1_VERSION, 0, 0);
 }
 #endif
+
+static int execute_cleanse_plaintext(const SSL_METHOD *smeth,
+                                     const SSL_METHOD *cmeth,
+                                     int min_version, int max_version)
+{
+    size_t i;
+    SSL_CTX *cctx = NULL, *sctx = NULL;
+    SSL *clientssl = NULL, *serverssl = NULL;
+    int testresult = 0;
+    SSL3_RECORD *rr;
+    void *zbuf;
+
+    static unsigned char cbuf[16000];
+    static unsigned char sbuf[16000];
+
+    if (!TEST_true(create_ssl_ctx_pair(libctx,
+                                       smeth, cmeth,
+                                       min_version, max_version,
+                                       &sctx, &cctx, cert,
+                                       privkey)))
+        goto end;
+
+    if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl,
+                                      NULL, NULL)))
+        goto end;
+
+    if (!TEST_true(SSL_set_options(serverssl, SSL_OP_CLEANSE_PLAINTEXT)))
+        goto end;
+
+    if (!TEST_true(create_ssl_connection(serverssl, clientssl,
+                                         SSL_ERROR_NONE)))
+        goto end;
+
+    for (i = 0; i < sizeof(cbuf); i++) {
+        cbuf[i] = i & 0xff;
+    }
+
+    if (!TEST_int_eq(SSL_write(clientssl, cbuf, sizeof(cbuf)), sizeof(cbuf)))
+        goto end;
+
+    if (!TEST_int_eq(SSL_peek(serverssl, &sbuf, sizeof(sbuf)), sizeof(sbuf)))
+        goto end;
+
+    if (!TEST_mem_eq(cbuf, sizeof(cbuf), sbuf, sizeof(sbuf)))
+        goto end;
+
+    /*
+     * Since we called SSL_peek(), we know the data in the record
+     * layer is a plaintext record. We can gather the pointer to check
+     * for zeroization after SSL_read().
+     */
+    rr = serverssl->rlayer.rrec;
+    zbuf = &rr->data[rr->off];
+    if (!TEST_int_eq(rr->length, sizeof(cbuf)))
+        goto end;
+
+    /*
+     * After SSL_peek() the plaintext must still be stored in the
+     * record.
+     */
+    if (!TEST_mem_eq(cbuf, sizeof(cbuf), zbuf, sizeof(cbuf)))
+        goto end;
+
+    memset(sbuf, 0, sizeof(sbuf));
+    if (!TEST_int_eq(SSL_read(serverssl, &sbuf, sizeof(sbuf)), sizeof(sbuf)))
+        goto end;
+
+    if (!TEST_mem_eq(cbuf, sizeof(cbuf), sbuf, sizeof(cbuf)))
+        goto end;
+
+    /* Check if rbuf is cleansed */
+    memset(cbuf, 0, sizeof(cbuf));
+    if (!TEST_mem_eq(cbuf, sizeof(cbuf), zbuf, sizeof(cbuf)))
+        goto end;
+
+    testresult = 1;
+ end:
+    SSL_free(serverssl);
+    SSL_free(clientssl);
+    SSL_CTX_free(sctx);
+    SSL_CTX_free(cctx);
+
+    return testresult;
+}
+
+static int test_cleanse_plaintext(void)
+{
+#if !defined(OPENSSL_NO_TLS1_2)
+    if (!TEST_true(execute_cleanse_plaintext(TLS_server_method(),
+                                             TLS_client_method(),
+                                             TLS1_2_VERSION,
+                                             TLS1_2_VERSION)))
+        return 0;
+
+#endif
+
+#if !defined(OPENSSL_NO_TLS1_3)
+    if (!TEST_true(execute_cleanse_plaintext(TLS_server_method(),
+                                             TLS_client_method(),
+                                             TLS1_3_VERSION,
+                                             TLS1_3_VERSION)))
+        return 0;
+#endif
+
+#if !defined(OPENSSL_NO_DTLS)
+    if (!TEST_true(execute_cleanse_plaintext(DTLS_server_method(),
+                                             DTLS_client_method(),
+                                             DTLS1_VERSION,
+                                             0)))
+        return 0;
+#endif
+    return 1;
+}
 
 #ifndef OPENSSL_NO_OCSP
 static int ocsp_server_cb(SSL *s, void *arg)
@@ -5562,6 +5680,10 @@ static int test_export_key_mat(int tst)
     OPENSSL_assert(tst >= 0 && (size_t)tst < OSSL_NELEM(protocols));
     SSL_CTX_set_max_proto_version(cctx, protocols[tst]);
     SSL_CTX_set_min_proto_version(cctx, protocols[tst]);
+    if ((protocols[tst] < TLS1_2_VERSION) &&
+        (!SSL_CTX_set_cipher_list(cctx, "DEFAULT:@SECLEVEL=0")
+        || !SSL_CTX_set_cipher_list(sctx, "DEFAULT:@SECLEVEL=0")))
+        goto end;
 
     if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl, NULL,
                                       NULL))
@@ -6922,7 +7044,7 @@ static int tick_key_evp_cb(SSL *s, unsigned char key_name[16],
     params[2] = OSSL_PARAM_construct_end();
     if (aes128cbc == NULL
             || !EVP_CipherInit_ex(ctx, aes128cbc, NULL, tick_aes_key, iv, enc)
-            || !EVP_MAC_set_ctx_params(hctx, params)
+            || !EVP_MAC_CTX_set_params(hctx, params)
             || !EVP_MAC_init(hctx))
         ret = -1;
     else
@@ -7501,15 +7623,13 @@ static int test_cert_cb(int tst)
 
 static int client_cert_cb(SSL *ssl, X509 **x509, EVP_PKEY **pkey)
 {
-    X509 *xcert, *peer;
+    X509 *xcert;
     EVP_PKEY *privpkey;
     BIO *in = NULL;
 
-    /* Check that SSL_get_peer_certificate() returns something sensible */
-    peer = SSL_get_peer_certificate(ssl);
-    if (!TEST_ptr(peer))
+    /* Check that SSL_get0_peer_certificate() returns something sensible */
+    if (!TEST_ptr(SSL_get0_peer_certificate(ssl)))
         return 0;
-    X509_free(peer);
 
     in = BIO_new_file(cert, "r");
     if (!TEST_ptr(in))
@@ -8039,6 +8159,8 @@ static int test_sigalgs_available(int idx)
 
     cctx = SSL_CTX_new_with_libctx(clientctx, NULL, TLS_client_method());
     sctx = SSL_CTX_new_with_libctx(serverctx, NULL, TLS_server_method());
+    if (!TEST_ptr(cctx) || !TEST_ptr(sctx))
+        goto end;
 
     if (!TEST_true(create_ssl_ctx_pair(libctx, TLS_server_method(),
                                        TLS_client_method(),
@@ -8104,6 +8226,117 @@ static int test_sigalgs_available(int idx)
 }
 #endif /* OPENSSL_NO_EC */
 
+#ifndef OPENSSL_NO_TLS1_3
+static int test_pluggable_group(void)
+{
+    SSL_CTX *cctx = NULL, *sctx = NULL;
+    SSL *clientssl = NULL, *serverssl = NULL;
+    int testresult = 0;
+    OSSL_PROVIDER *tlsprov = OSSL_PROVIDER_load(libctx, "tls-provider");
+    /* Check that we are not impacted by a provider without any groups */
+    OSSL_PROVIDER *legacyprov = OSSL_PROVIDER_load(libctx, "legacy");
+
+    if (!TEST_ptr(tlsprov) || !TEST_ptr(legacyprov))
+        goto end;
+
+    if (!TEST_true(create_ssl_ctx_pair(libctx, TLS_server_method(),
+                                       TLS_client_method(),
+                                       TLS1_3_VERSION,
+                                       TLS1_3_VERSION,
+                                       &sctx, &cctx, cert, privkey))
+            || !TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl,
+                                             NULL, NULL)))
+        goto end;
+
+    if (!TEST_true(SSL_set1_groups_list(serverssl, "xorgroup"))
+            || !TEST_true(SSL_set1_groups_list(clientssl, "xorgroup")))
+        goto end;
+
+    if (!TEST_true(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
+        goto end;
+
+    testresult = 1;
+
+ end:
+    SSL_free(serverssl);
+    SSL_free(clientssl);
+    SSL_CTX_free(sctx);
+    SSL_CTX_free(cctx);
+    OSSL_PROVIDER_unload(tlsprov);
+    OSSL_PROVIDER_unload(legacyprov);
+
+    return testresult;
+}
+#endif
+
+#ifndef OPENSSL_NO_TLS1_2
+static int test_ssl_dup(void)
+{
+    SSL_CTX *cctx = NULL, *sctx = NULL;
+    SSL *clientssl = NULL, *serverssl = NULL, *client2ssl = NULL;
+    int testresult = 0;
+    BIO *rbio = NULL, *wbio = NULL;
+
+    if (!TEST_true(create_ssl_ctx_pair(libctx, TLS_server_method(),
+                                       TLS_client_method(),
+                                       0,
+                                       0,
+                                       &sctx, &cctx, cert, privkey)))
+        goto end;
+
+    if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl,
+                                             NULL, NULL)))
+        goto end;
+
+    if (!TEST_true(SSL_set_min_proto_version(clientssl, TLS1_2_VERSION))
+            || !TEST_true(SSL_set_max_proto_version(clientssl, TLS1_2_VERSION)))
+        goto end;
+
+    client2ssl = SSL_dup(clientssl);
+    rbio = SSL_get_rbio(clientssl);
+    if (!TEST_ptr(rbio)
+            || !TEST_true(BIO_up_ref(rbio)))
+        goto end;
+    SSL_set0_rbio(client2ssl, rbio);
+    rbio = NULL;
+
+    wbio = SSL_get_wbio(clientssl);
+    if (!TEST_ptr(wbio) || !TEST_true(BIO_up_ref(wbio)))
+        goto end;
+    SSL_set0_wbio(client2ssl, wbio);
+    rbio = NULL;
+
+    if (!TEST_ptr(client2ssl)
+               /* Handshake not started so pointers should be different */
+            || !TEST_ptr_ne(clientssl, client2ssl))
+        goto end;
+
+    if (!TEST_int_eq(SSL_get_min_proto_version(client2ssl), TLS1_2_VERSION)
+            || !TEST_int_eq(SSL_get_max_proto_version(client2ssl), TLS1_2_VERSION))
+        goto end;
+
+    if (!TEST_true(create_ssl_connection(serverssl, client2ssl, SSL_ERROR_NONE)))
+        goto end;
+
+    SSL_free(clientssl);
+    clientssl = SSL_dup(client2ssl);
+    if (!TEST_ptr(clientssl)
+               /* Handshake has finished so pointers should be the same */
+            || !TEST_ptr_eq(clientssl, client2ssl))
+        goto end;
+
+    testresult = 1;
+
+ end:
+    SSL_free(serverssl);
+    SSL_free(clientssl);
+    SSL_free(client2ssl);
+    SSL_CTX_free(sctx);
+    SSL_CTX_free(cctx);
+
+    return testresult;
+}
+#endif
 
 OPT_TEST_DECLARE_USAGE("certfile privkeyfile srpvfile tmpfile provider config\n")
 
@@ -8153,6 +8386,15 @@ int setup_tests(void)
     if (strcmp(modulename, "fips") == 0)
         is_fips = 1;
 
+    /*
+     * We add, but don't load the test "tls-provider". We'll load it when we
+     * need it.
+     */
+    if (!TEST_true(OSSL_PROVIDER_add_builtin(libctx, "tls-provider",
+                                             tls_provider_init)))
+        return 0;
+
+
     if (getenv("OPENSSL_TEST_GETCOUNTS") != NULL) {
 #ifdef OPENSSL_NO_CRYPTO_MDEBUG
         TEST_error("not supported in this build");
@@ -8196,6 +8438,7 @@ int setup_tests(void)
 #ifndef OPENSSL_NO_DTLS
     ADD_TEST(test_large_message_dtls);
 #endif
+    ADD_TEST(test_cleanse_plaintext);
 #ifndef OPENSSL_NO_OCSP
     ADD_TEST(test_tlsext_status_type);
 #endif
@@ -8294,6 +8537,12 @@ int setup_tests(void)
     ADD_ALL_TESTS(test_servername, 10);
 #ifndef OPENSSL_NO_EC
     ADD_ALL_TESTS(test_sigalgs_available, 6);
+#endif
+#ifndef OPENSSL_NO_TLS1_3
+    ADD_TEST(test_pluggable_group);
+#endif
+#ifndef OPENSSL_NO_TLS1_2
+    ADD_TEST(test_ssl_dup);
 #endif
     return 1;
 

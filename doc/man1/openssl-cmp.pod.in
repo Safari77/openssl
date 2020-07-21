@@ -71,7 +71,7 @@ B<openssl> B<cmp>
 [B<-keyform> I<PEM|DER|P12|ENGINE>]
 [B<-certsform> I<PEM|DER|P12>]
 [B<-otherpass> I<arg>]
-[B<-engine> I<id>]
+{- $OpenSSL::safe::opt_engine_synopsis -}
 {- $OpenSSL::safe::opt_provider_synopsis -}
 
 [B<-tls_used>]
@@ -584,7 +584,7 @@ of response messages.
 =item B<-cacertsout> I<filename>
 
 The file where to save any CA certificates received in the caPubs field of
-Initializiation Response (IP) messages.
+Initialization Response (IP) messages.
 
 =back
 
@@ -698,6 +698,7 @@ If not given here, the password will be prompted for if needed.
 
 For more information about the format of B<arg> see the
 B<PASS PHRASE ARGUMENTS> section in L<openssl(1)>.
+{- output_off() if $disabled{"deprecated-3.0"}; "" -}
 
 =item B<-engine> I<id>
 
@@ -714,6 +715,7 @@ the engine.
 as supported, e.g., by libp11:
 C<-key engine:pkcs11:object=my-private-key;type=private;pin-value=1234>
 
+{- output_on() if $disabled{"deprecated-3.0"}; "" -}
 {- $OpenSSL::safe::opt_provider_item -}
 
 =back
@@ -1104,7 +1106,7 @@ This prints information about all received ITAV B<infoType>s to stdout.
 For CMP client invocations, in particular for certificate enrollment,
 usually many parameters need to be set, which is tedious and error-prone to do
 on the command line.
-Therefore the client offers the possibility to read
+Therefore, the client offers the possibility to read
 options from sections of the OpenSSL config file, usually called B<openssl.cnf>.
 The values found there can still be extended and even overridden by any
 subsequently loaded sections and on the command line.

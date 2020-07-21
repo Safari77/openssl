@@ -253,12 +253,17 @@ static OSSL_CRMF_MSG *crm_new(OSSL_CMP_CTX *ctx, int bodytype, int rid)
                                             NULL /* serial */))
         goto err;
     if (ctx->days != 0) {
-        time_t notBefore, notAfter;
+        time_t now = time(NULL);
+        ASN1_TIME *notBefore = ASN1_TIME_adj(NULL, now, 0, 0);
+        ASN1_TIME *notAfter = ASN1_TIME_adj(NULL, now, ctx->days, 0);
 
-        notBefore = time(NULL);
-        notAfter = notBefore + 60 * 60 * 24 * ctx->days;
-        if (!OSSL_CRMF_MSG_set_validity(crm, notBefore, notAfter))
+        if (notBefore == NULL
+                || notAfter == NULL
+                || !OSSL_CRMF_MSG_set0_validity(crm, notBefore, notAfter)) {
+            ASN1_TIME_free(notBefore);
+            ASN1_TIME_free(notAfter);
             goto err;
+        }
     }
 
     /* extensions */
@@ -293,7 +298,7 @@ static OSSL_CRMF_MSG *crm_new(OSSL_CMP_CTX *ctx, int bodytype, int rid)
     if (bodytype == OSSL_CMP_PKIBODY_KUR) {
         OSSL_CRMF_CERTID *cid =
             OSSL_CRMF_CERTID_gen(X509_get_issuer_name(refcert),
-                                 X509_get_serialNumber(refcert));
+                                 X509_get0_serialNumber(refcert));
         int ret;
 
         if (cid == NULL)
@@ -464,7 +469,7 @@ OSSL_CMP_MSG *ossl_cmp_rr_new(OSSL_CMP_CTX *ctx)
                                      NULL /* pubkey would be redundant */,
                                      NULL /* subject would be redundant */,
                                      X509_get_issuer_name(ctx->oldCert),
-                                     X509_get_serialNumber(ctx->oldCert)))
+                                     X509_get0_serialNumber(ctx->oldCert)))
         goto err;
 
     /* revocation reason code is optional */

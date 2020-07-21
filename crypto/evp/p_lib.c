@@ -595,7 +595,7 @@ EVP_PKEY *EVP_PKEY_new_CMAC_key(ENGINE *e, const unsigned char *priv,
         prov == NULL ? NULL : ossl_provider_library_context(prov);
     EVP_PKEY *ret = EVP_PKEY_new();
     EVP_MAC *cmac = EVP_MAC_fetch(libctx, OSSL_MAC_NAME_CMAC, NULL);
-    EVP_MAC_CTX *cmctx = cmac != NULL ? EVP_MAC_new_ctx(cmac) : NULL;
+    EVP_MAC_CTX *cmctx = cmac != NULL ? EVP_MAC_CTX_new(cmac) : NULL;
     OSSL_PARAM params[4];
     size_t paramsn = 0;
 
@@ -620,7 +620,7 @@ EVP_PKEY *EVP_PKEY_new_CMAC_key(ENGINE *e, const unsigned char *priv,
                                           (char *)priv, len);
     params[paramsn] = OSSL_PARAM_construct_end();
 
-    if (!EVP_MAC_set_ctx_params(cmctx, params)) {
+    if (!EVP_MAC_CTX_set_params(cmctx, params)) {
         EVPerr(EVP_F_EVP_PKEY_NEW_CMAC_KEY, EVP_R_KEY_SETUP_FAILED);
         goto err;
     }
@@ -630,7 +630,7 @@ EVP_PKEY *EVP_PKEY_new_CMAC_key(ENGINE *e, const unsigned char *priv,
 
  err:
     EVP_PKEY_free(ret);
-    EVP_MAC_free_ctx(cmctx);
+    EVP_MAC_CTX_free(cmctx);
     EVP_MAC_free(cmac);
     return NULL;
 # else
@@ -1000,7 +1000,7 @@ static int get_ec_curve_name_cb(const OSSL_PARAM params[], void *arg)
 {
     const OSSL_PARAM *p = NULL;
 
-    if ((p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_EC_NAME)) != NULL)
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_GROUP_NAME)) != NULL)
         return OSSL_PARAM_get_utf8_string(p, arg, 0);
 
     /* If there is no curve name, this is not an EC key */
