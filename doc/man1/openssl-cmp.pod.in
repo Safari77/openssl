@@ -69,7 +69,6 @@ B<openssl> B<cmp>
 
 [B<-certform> I<PEM|DER>]
 [B<-keyform> I<PEM|DER|P12|ENGINE>]
-[B<-certsform> I<PEM|DER|P12>]
 [B<-otherpass> I<arg>]
 {- $OpenSSL::safe::opt_engine_synopsis -}
 {- $OpenSSL::safe::opt_provider_synopsis -}
@@ -681,15 +680,10 @@ Send messages without CMP-level protection.
 File format to use when saving a certificate to a file.
 Default value is PEM.
 
-=item B<-keyform> I<PEM|DER|P12>
+=item B<-keyform> I<PEM|DER|P12|ENGINE>
 
-Format to assume when reading key files.
-Default value is PEM.
-
-=item B<-certsform> I<PEM|DER|P12>
-
-Format to try first when reading multiple certificates from file(s).
-Default value is PEM.
+The format of the key input.
+The only value with effect is B<ENGINE>.
 
 =item B<-otherpass> I<arg>
 
@@ -991,8 +985,10 @@ to issue the following shell commands.
 
   cd /path/to/openssl
   export OPENSSL_CONF=openssl.cnf
+=begin comment
   wget 'http://pki.certificate.fi:8080/install-ca-cert.html/ca-certificate.crt\
         ?ca-id=632&download-certificate=1' -O insta.ca.crt
+=end comment
   openssl genrsa -out insta.priv.pem
   openssl cmp -section insta
 
@@ -1048,7 +1044,11 @@ or
 
 Many more options can be used in the configuration file
 and/or on the command line.
+For instance, the B<-reqexts> CLI option may refer to a section in the
+configuration file defining X.509 extensions to use in certificate requests,
+such as B<v3_req> in F<openssl/apps/openssl.cnf>:
 
+  openssl cmp -section insta,cr -reqexts v3_req
 
 =head2 Certificate enrollment
 

@@ -383,12 +383,10 @@ int X509_REQ_digest(const X509_REQ *data, const EVP_MD *type,
 int X509_NAME_digest(const X509_NAME *data, const EVP_MD *type,
                      unsigned char *md, unsigned int *len);
 
-# if !defined(OPENSSL_NO_SOCK)
 X509 *X509_load_http(const char *url, BIO *bio, BIO *rbio, int timeout);
-#  define X509_http_nbio(url) X509_load_http(url, NULL, NULL, 0)
+# define X509_http_nbio(url) X509_load_http(url, NULL, NULL, 0)
 X509_CRL *X509_CRL_load_http(const char *url, BIO *bio, BIO *rbio, int timeout);
-#  define X509_CRL_http_nbio(url) X509_CRL_load_http(url, NULL,  NULL, 0)
-# endif
+# define X509_CRL_http_nbio(url) X509_CRL_load_http(url, NULL,  NULL, 0)
 
 # ifndef OPENSSL_NO_STDIO
 X509 *d2i_X509_fp(FILE *fp, X509 **x509);
@@ -524,6 +522,8 @@ EVP_PKEY *X509_PUBKEY_get(const X509_PUBKEY *key);
 int X509_get_pubkey_parameters(EVP_PKEY *pkey, STACK_OF(X509) *chain);
 long X509_get_pathlen(X509 *x);
 DECLARE_ASN1_ENCODE_FUNCTIONS_only(EVP_PKEY, PUBKEY)
+EVP_PKEY *d2i_PUBKEY_ex(EVP_PKEY **a, const unsigned char **pp, long length,
+                        OPENSSL_CTX *libctx, const char *propq);
 # ifndef OPENSSL_NO_RSA
 DECLARE_ASN1_ENCODE_FUNCTIONS_only(RSA, RSA_PUBKEY)
 # endif
@@ -621,33 +621,30 @@ X509_INFO *X509_INFO_new(void);
 void X509_INFO_free(X509_INFO *a);
 char *X509_NAME_oneline(const X509_NAME *a, char *buf, int size);
 
+/* TODO move this block of decls to asn1.h when 'breaking change' is possible */
 DEPRECATEDIN_3_0(int ASN1_verify(i2d_of_void *i2d, X509_ALGOR *algor1,
                                  ASN1_BIT_STRING *signature, char *data,
                                  EVP_PKEY *pkey))
-
 DEPRECATEDIN_3_0(int ASN1_digest(i2d_of_void *i2d, const EVP_MD *type,
                                  char *data,
                                  unsigned char *md, unsigned int *len))
-
 DEPRECATEDIN_3_0(int ASN1_sign(i2d_of_void *i2d, X509_ALGOR *algor1,
                                X509_ALGOR *algor2, ASN1_BIT_STRING *signature,
                                char *data, EVP_PKEY *pkey, const EVP_MD *type))
-
 int ASN1_item_digest(const ASN1_ITEM *it, const EVP_MD *type, void *data,
                      unsigned char *md, unsigned int *len);
-
-int ASN1_item_verify(const ASN1_ITEM *it, X509_ALGOR *algor1,
-                     ASN1_BIT_STRING *signature, void *data, EVP_PKEY *pkey);
-int ASN1_item_verify_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
-                         ASN1_BIT_STRING *signature, void *data,
+int ASN1_item_verify(const ASN1_ITEM *it, const X509_ALGOR *alg,
+                     const ASN1_BIT_STRING *signature, const void *data,
+                     EVP_PKEY *pkey);
+int ASN1_item_verify_ctx(const ASN1_ITEM *it, const X509_ALGOR *alg,
+                         const ASN1_BIT_STRING *signature, const void *data,
                          EVP_MD_CTX *ctx);
-
-int ASN1_item_sign(const ASN1_ITEM *it, X509_ALGOR *algor1,
-                   X509_ALGOR *algor2, ASN1_BIT_STRING *signature, void *data,
-                   EVP_PKEY *pkey, const EVP_MD *type);
+int ASN1_item_sign(const ASN1_ITEM *it, X509_ALGOR *algor1, X509_ALGOR *algor2,
+                   ASN1_BIT_STRING *signature, const void *data,
+                   EVP_PKEY *pkey, const EVP_MD *md);
 int ASN1_item_sign_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
                        X509_ALGOR *algor2, ASN1_BIT_STRING *signature,
-                       void *asn, EVP_MD_CTX *ctx);
+                       const void *data, EVP_MD_CTX *ctx);
 
 long X509_get_version(const X509 *x);
 int X509_set_version(X509 *x, long version);
@@ -786,6 +783,14 @@ unsigned long X509_subject_name_hash(X509 *x);
 unsigned long X509_issuer_name_hash_old(X509 *a);
 unsigned long X509_subject_name_hash_old(X509 *x);
 # endif
+
+# define X509_ADD_FLAG_DEFAULT  0
+# define X509_ADD_FLAG_UP_REF   0x1
+# define X509_ADD_FLAG_PREPEND  0x2
+# define X509_ADD_FLAG_NO_DUP   0x4
+# define X509_ADD_FLAG_NO_SS    0x8
+int X509_add_cert(STACK_OF(X509) *sk, X509 *cert, int flags);
+int X509_add_certs(STACK_OF(X509) *sk, STACK_OF(X509) *certs, int flags);
 
 int X509_cmp(const X509 *a, const X509 *b);
 int X509_NAME_cmp(const X509_NAME *a, const X509_NAME *b);

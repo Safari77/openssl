@@ -63,12 +63,16 @@ int asn1_item_digest_with_libctx(const ASN1_ITEM *it, const EVP_MD *md,
     EVP_MD *fetched_md = (EVP_MD *)md;
 
     i = ASN1_item_i2d(asn, &str, it);
-    if (str == NULL)
+    if (i < 0 || str == NULL)
         return 0;
 
     if (EVP_MD_provider(md) == NULL) {
 #if !defined(OPENSSL_NO_ENGINE)
-        if (ENGINE_get_digest_engine(EVP_MD_type(md)) == NULL)
+        ENGINE *tmpeng = ENGINE_get_digest_engine(EVP_MD_type(md));
+
+        if (tmpeng != NULL)
+            ENGINE_finish(tmpeng);
+        else
 #endif
             fetched_md = EVP_MD_fetch(libctx, EVP_MD_name(md), propq);
     }

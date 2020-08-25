@@ -88,6 +88,7 @@ int ERR_load_PROV_strings(void);
 # define PROV_R_INVALID_DATA                              115
 # define PROV_R_INVALID_DIGEST                            122
 # define PROV_R_INVALID_DIGEST_LENGTH                     166
+# define PROV_R_INVALID_DIGEST_SIZE                       218
 # define PROV_R_INVALID_ITERATION_COUNT                   123
 # define PROV_R_INVALID_IVLEN                             116
 # define PROV_R_INVALID_IV_LENGTH                         109
@@ -127,6 +128,8 @@ int ERR_load_PROV_strings(void);
 # define PROV_R_MISSING_TYPE                              134
 # define PROV_R_MISSING_XCGHASH                           135
 # define PROV_R_MODULE_INTEGRITY_FAILURE                  214
+# define PROV_R_NOT_A_PRIVATE_KEY                         221
+# define PROV_R_NOT_A_PUBLIC_KEY                          220
 # define PROV_R_NOT_INSTANTIATED                          193
 # define PROV_R_NOT_SUPPORTED                             136
 # define PROV_R_NOT_XOF_OR_INVALID_LENGTH                 113

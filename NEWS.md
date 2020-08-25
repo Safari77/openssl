@@ -20,6 +20,7 @@ OpenSSL 3.0
 
 ### Major changes between OpenSSL 1.1.1 and OpenSSL 3.0 [under development]
 
+  * Remove the `RAND_DRBG` API.
   * Deprecated the `ENGINE` API.
   * Added `OPENSSL_CTX`, a libcrypto library context.
   * Interactive mode is removed from the 'openssl' program.
@@ -42,7 +43,7 @@ OpenSSL 3.0
   * Added a proper HTTP(S) client to libcrypto supporting GET and POST,
     redirection, plain and ASN.1-encoded contents, proxies, and timeouts.
   * Added util/check-format.pl for checking adherence to the coding guidelines.
-  * Added OSSL_SERIALIZER, a generic serializer API.
+  * Added OSSL_ENCODER, a generic encoder API.
   * Added OSSL_PARAM_BLD, an easier to use API to OSSL_PARAM.
   * Added error raising macros, ERR_raise() and ERR_raise_data().
   * Deprecated ERR_put_error().

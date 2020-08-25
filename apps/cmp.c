@@ -138,8 +138,6 @@ static char *opt_certform_s = "PEM";
 static int opt_certform = FORMAT_PEM;
 static char *opt_keyform_s = "PEM";
 static int opt_keyform = FORMAT_PEM;
-static char *opt_certsform_s = "PEM";
-static int opt_certsform = FORMAT_PEM;
 static char *opt_otherpass = NULL;
 static char *opt_engine = NULL;
 
@@ -222,7 +220,7 @@ typedef enum OPTION_choice {
     OPT_DIGEST, OPT_MAC, OPT_EXTRACERTS,
     OPT_UNPROTECTED_REQUESTS,
 
-    OPT_CERTFORM, OPT_KEYFORM, OPT_CERTSFORM,
+    OPT_CERTFORM, OPT_KEYFORM,
     OPT_OTHERPASS,
 #ifndef OPENSSL_NO_ENGINE
     OPT_ENGINE,
@@ -394,12 +392,8 @@ const OPTIONS cmp_options[] = {
     OPT_SECTION("Credentials format"),
     {"certform", OPT_CERTFORM, 's',
      "Format (PEM or DER) to use when saving a certificate to a file. Default PEM"},
-    {OPT_MORE_STR, 0, 0,
-     "This also determines format to use for writing (not supported for P12)"},
     {"keyform", OPT_KEYFORM, 's',
-     "Format to assume when reading key files. Default PEM"},
-    {"certsform", OPT_CERTSFORM, 's',
-     "Format (PEM/DER/P12) to try first reading multiple certs. Default PEM"},
+     "Format of the key input (ENGINE, other values ignored)"},
     {"otherpass", OPT_OTHERPASS, 's',
      "Pass phrase source potentially needed for loading certificates of others"},
 #ifndef OPENSSL_NO_ENGINE
@@ -540,7 +534,7 @@ static varref cmp_vars[] = { /* must be in same order as enumerated above! */
     {&opt_digest}, {&opt_mac}, {&opt_extracerts},
     {(char **)&opt_unprotected_requests},
 
-    {&opt_certform_s}, {&opt_keyform_s}, {&opt_certsform_s},
+    {&opt_certform_s}, {&opt_keyform_s},
     {&opt_otherpass},
 #ifndef OPENSSL_NO_ENGINE
     {&opt_engine},
@@ -603,54 +597,6 @@ static int print_to_bio_out(const char *func, const char *file, int line,
     return OSSL_CMP_print_to_bio(bio_out, func, file, line, level, msg);
 }
 
-/* code duplicated from crypto/cmp/cmp_util.c */
-static int sk_X509_add1_cert(STACK_OF(X509) *sk, X509 *cert,
-                             int no_dup, int prepend)
-{
-    if (no_dup) {
-        /*
-         * not using sk_X509_set_cmp_func() and sk_X509_find()
-         * because this re-orders the certs on the stack
-         */
-        int i;
-
-        for (i = 0; i < sk_X509_num(sk); i++) {
-            if (X509_cmp(sk_X509_value(sk, i), cert) == 0)
-                return 1;
-        }
-    }
-    if (!X509_up_ref(cert))
-        return 0;
-    if (!sk_X509_insert(sk, cert, prepend ? 0 : -1)) {
-        X509_free(cert);
-        return 0;
-    }
-    return 1;
-}
-
-/* code duplicated from crypto/cmp/cmp_util.c */
-static int sk_X509_add1_certs(STACK_OF(X509) *sk, STACK_OF(X509) *certs,
-                              int no_self_signed, int no_dups, int prepend)
-/* compiler would allow 'const' for the list of certs, yet they are up-ref'ed */
-{
-    int i;
-
-    if (sk == NULL)
-        return 0;
-    if (certs == NULL)
-        return 1;
-    for (i = 0; i < sk_X509_num(certs); i++) {
-        X509 *cert = sk_X509_value(certs, i);
-
-        if (!no_self_signed || X509_check_issued(cert, cert) != X509_V_OK) {
-            if (!sk_X509_add1_cert(sk, cert, no_dups, prepend))
-                return 0;
-        }
-    }
-    return 1;
-}
-
-/* TODO potentially move to apps/lib/apps.c */
 static char *next_item(char *opt) /* in list separated by comma and/or space */
 {
     /* advance to separator (comma or whitespace), if any */
@@ -688,51 +634,6 @@ static X509 *load_cert_pwd(const char *uri, const char *pass, const char *desc)
     cert = load_cert_pass(uri, 0, pass_string, desc);
     clear_free(pass_string);
     return cert;
-}
-
-/* TODO remove when PR #4930 is merged */
-static int load_pkcs12(BIO *in, const char *desc,
-                       pem_password_cb *pem_cb, void *cb_data,
-                       EVP_PKEY **pkey, X509 **cert, STACK_OF(X509) **ca)
-{
-    const char *pass;
-    char tpass[PEM_BUFSIZE];
-    int len;
-    int ret = 0;
-    PKCS12 *p12 = d2i_PKCS12_bio(in, NULL);
-
-    if (desc == NULL)
-        desc = "PKCS12 input";
-    if (p12 == NULL) {
-        BIO_printf(bio_err, "error loading PKCS12 file for %s\n", desc);
-        goto die;
-    }
-
-    /* See if an empty password will do */
-    if (PKCS12_verify_mac(p12, "", 0) || PKCS12_verify_mac(p12, NULL, 0)) {
-        pass = "";
-    } else {
-        if (pem_cb == NULL)
-            pem_cb = wrap_password_callback;
-        len = pem_cb(tpass, PEM_BUFSIZE, 0, cb_data);
-        if (len < 0) {
-            BIO_printf(bio_err, "passphrase callback error for %s\n", desc);
-            goto die;
-        }
-        if (len < PEM_BUFSIZE)
-            tpass[len] = 0;
-        if (!PKCS12_verify_mac(p12, tpass, len)) {
-            BIO_printf(bio_err,
-                       "mac verify error (wrong password?) in PKCS12 file for %s\n",
-                       desc);
-            goto die;
-        }
-        pass = tpass;
-    }
-    ret = PKCS12_parse(p12, pass, pkey, cert, ca);
- die:
-    PKCS12_free(p12);
-    return ret;
 }
 
 /* TODO potentially move this and related functions to apps/lib/apps.c */
@@ -800,47 +701,6 @@ static X509_REQ *load_csr_autofmt(const char *infile, const char *desc)
     return csr;
 }
 
-/* TODO replace by calling generalized load_certs() when PR #4930 is merged */
-static int load_certs_preliminary(const char *file, STACK_OF(X509) **certs,
-                                  int format, const char *pass,
-                                  const char *desc)
-{
-    X509 *cert = NULL;
-    int ret = 0;
-
-    if (format == FORMAT_PKCS12) {
-        BIO *bio = bio_open_default(file, 'r', format);
-
-        if (bio != NULL) {
-            EVP_PKEY *pkey = NULL; /* pkey is needed until PR #4930 is merged */
-            PW_CB_DATA cb_data;
-
-            cb_data.password = pass;
-            cb_data.prompt_info = file;
-            ret = load_pkcs12(bio, desc, wrap_password_callback,
-                              &cb_data, &pkey, &cert, certs);
-            EVP_PKEY_free(pkey);
-            BIO_free(bio);
-        }
-    } else if (format == FORMAT_ASN1) { /* load only one cert in this case */
-        CMP_warn1("can load only one certificate in DER format from %s", file);
-        cert = load_cert_pass(file, 0, pass, desc);
-    }
-    if (format == FORMAT_PKCS12 || format == FORMAT_ASN1) {
-        if (cert) {
-            if (*certs == NULL)
-                *certs = sk_X509_new_null();
-            if (*certs != NULL)
-                ret = sk_X509_insert(*certs, cert, 0);
-            else
-                X509_free(cert);
-        }
-    } else {
-        ret = load_certs(file, certs, format, pass, desc);
-    }
-    return ret;
-}
-
 static void warn_certs_expired(const char *file, STACK_OF(X509) **certs)
 {
     int i, res;
@@ -860,34 +720,20 @@ static void warn_certs_expired(const char *file, STACK_OF(X509) **certs)
     }
 }
 
-/*
- * TODO potentially move this and related functions to apps/lib/
- * or even better extend OSSL_STORE with type OSSL_STORE_INFO_CERTS
- */
-static int load_certs_autofmt(const char *infile, STACK_OF(X509) **certs,
-                              int exclude_http, const char *pass,
-                              const char *desc)
+static int load_certs_pwd(const char *infile, STACK_OF(X509) **certs,
+                          int exclude_http, const char *pass,
+                          const char *desc)
 {
     int ret = 0;
     char *pass_string;
-    BIO *bio_bak = bio_err;
-    int format = adjust_format(&infile, opt_certsform, 0);
+    int format = adjust_format(&infile, FORMAT_PEM, 0);
 
     if (exclude_http && format == FORMAT_HTTP) {
         BIO_printf(bio_err, "error: HTTP retrieval not allowed for %s\n", desc);
         return ret;
     }
     pass_string = get_passwd(pass, desc);
-    if (format != FORMAT_HTTP)
-        bio_err = NULL; /* do not show errors on more than one try */
-    ret = load_certs_preliminary(infile, certs, format, pass_string, desc);
-    bio_err = bio_bak;
-    if (!ret && format != FORMAT_HTTP) {
-        int format2 = format == FORMAT_PEM ? FORMAT_ASN1 : FORMAT_PEM;
-
-        ERR_clear_error();
-        ret = load_certs_preliminary(infile, certs, format2, pass_string, desc);
-    }
+    ret = load_certs(infile, certs, pass_string, desc);
     clear_free(pass_string);
 
     if (ret)
@@ -1109,12 +955,10 @@ static int set_name(const char *str,
                     OSSL_CMP_CTX *ctx, const char *desc)
 {
     if (str != NULL) {
-        X509_NAME *n = parse_name(str, MBSTRING_ASC, 0);
+        X509_NAME *n = parse_name(str, MBSTRING_ASC, 0, desc);
 
-        if (n == NULL) {
-            CMP_err2("cannot parse %s DN '%s'", desc, str);
+        if (n == NULL)
             return 0;
-        }
         if (!(*set_fn) (ctx, n)) {
             X509_NAME_free(n);
             CMP_err("out of memory");
@@ -1179,7 +1023,7 @@ static X509_STORE *load_certstore(char *input, const char *desc)
     while (input != NULL) {
         char *next = next_item(input);           \
 
-        if (!load_certs_autofmt(input, &certs, 1, opt_otherpass, desc)
+        if (!load_certs_pwd(input, &certs, 1, opt_otherpass, desc)
                 || !(store = sk_X509_to_store(store, certs))) {
             /* CMP_err("out of memory"); */
             X509_STORE_free(store);
@@ -1210,9 +1054,10 @@ static STACK_OF(X509) *load_certs_multifile(char *files,
     while (files != NULL) {
         char *next = next_item(files);
 
-        if (!load_certs_autofmt(files, &certs, 0, pass, desc))
+        if (!load_certs_pwd(files, &certs, 0, pass, desc))
             goto err;
-        if (!sk_X509_add1_certs(result, certs, 0, 1 /* no dups */, 0))
+        if (!X509_add_certs(result, certs,
+                            X509_ADD_FLAG_UP_REF | X509_ADD_FLAG_NO_DUP))
             goto oom;
         sk_X509_pop_free(certs, X509_free);
         certs = NULL;
@@ -1305,20 +1150,14 @@ static int transform_opts(void)
         return 0;
     }
 
-    if (opt_certsform_s != NULL
-            && !opt_format(opt_certsform_s, OPT_FMT_PEMDER | OPT_FMT_PKCS12,
-                           &opt_certsform)) {
-        CMP_err("unknown option given for certificate list loading format");
-        return 0;
-    }
-
     return 1;
 }
 
 static OSSL_CMP_SRV_CTX *setup_srv_ctx(ENGINE *engine)
 {
     OSSL_CMP_CTX *ctx; /* extra CMP (client) ctx partly used by server */
-    OSSL_CMP_SRV_CTX *srv_ctx = ossl_cmp_mock_srv_new();
+    OSSL_CMP_SRV_CTX *srv_ctx = ossl_cmp_mock_srv_new(app_get0_libctx(),
+                                                      app_get0_propq());
 
     if (srv_ctx == NULL)
         return NULL;
@@ -1603,8 +1442,8 @@ static SSL_CTX *setup_ssl_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
         X509 *cert;
         STACK_OF(X509) *certs = NULL;
 
-        if (!load_certs_autofmt(opt_tls_cert, &certs, 0, opt_tls_keypass,
-                                "TLS client certificate (optionally with chain)"))
+        if (!load_certs_pwd(opt_tls_cert, &certs, 0, opt_tls_keypass,
+                            "TLS client certificate (optionally with chain)"))
             /*
              * opt_tls_keypass is needed in case opt_tls_cert is an encrypted
              * PKCS#12 file
@@ -1771,8 +1610,8 @@ static int setup_protection_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
         STACK_OF(X509) *certs = NULL;
         int ok;
 
-        if (!load_certs_autofmt(opt_cert, &certs, 0, opt_keypass,
-                                "CMP client certificate (and optionally extra certs)"))
+        if (!load_certs_pwd(opt_cert, &certs, 0, opt_keypass,
+                            "CMP client certificate (and optionally extra certs)"))
             /* opt_keypass is needed if opt_cert is an encrypted PKCS#12 file */
             goto err;
 
@@ -1789,8 +1628,9 @@ static int setup_protection_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
             /* add any remaining certs to the list of untrusted certs */
             STACK_OF(X509) *untrusted = OSSL_CMP_CTX_get0_untrusted_certs(ctx);
             ok = untrusted != NULL ?
-                sk_X509_add1_certs(untrusted, certs, 0, 1 /* no dups */, 0) :
-                OSSL_CMP_CTX_set1_untrusted_certs(ctx, certs);
+                X509_add_certs(untrusted, certs,
+                               X509_ADD_FLAG_UP_REF | X509_ADD_FLAG_NO_DUP)
+                : OSSL_CMP_CTX_set1_untrusted_certs(ctx, certs);
         }
         sk_X509_pop_free(certs, X509_free);
         if (!ok)
@@ -1813,8 +1653,11 @@ static int setup_protection_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
             CMP_err1("digest algorithm name not recognized: '%s'", opt_digest);
             goto err;
         }
-        (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_DIGEST_ALGNID, digest);
-        (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_OWF_ALGNID, digest);
+        if (!OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_DIGEST_ALGNID, digest)
+            || !OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_OWF_ALGNID, digest)) {
+            CMP_err1("digest algorithm name not supported: '%s'", opt_digest);
+            goto err;
+        }
     }
 
     if (opt_mac != NULL) {
@@ -1869,7 +1712,7 @@ static int setup_request_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
     if (opt_days > 0
             && !OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_VALIDITY_DAYS,
                                         opt_days)) {
-        CMP_err("could to set requested cert validity period");
+        CMP_err("could not set requested cert validity period");
         goto err;
     }
 
@@ -2095,7 +1938,6 @@ static int setup_client_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
 
     if (opt_proxy != NULL)
         (void)BIO_snprintf(proxy_buf, sizeof(proxy_buf), " via %s", opt_proxy);
-    CMP_info2("will contact %s%s", server_buf, proxy_buf);
 
     if (!transform_opts())
         goto err;
@@ -2217,6 +2059,9 @@ static int setup_client_ctx(OSSL_CMP_CTX *ctx, ENGINE *engine)
     if (opt_geninfo != NULL && !handle_opt_geninfo(ctx))
         goto err;
 
+    /* not printing earlier, to minimize confusion in case setup fails before */
+    CMP_info2("will contact %s%s", server_buf, proxy_buf);
+
     ret = 1;
 
  err:
@@ -2287,7 +2132,7 @@ static void print_itavs(STACK_OF(OSSL_CMP_ITAV) *itavs)
 {
     OSSL_CMP_ITAV *itav = NULL;
     char buf[128];
-    int i;
+    int i, r;
     int n = sk_OSSL_CMP_ITAV_num(itavs); /* itavs == NULL leads to 0 */
 
     if (n == 0) {
@@ -2297,8 +2142,13 @@ static void print_itavs(STACK_OF(OSSL_CMP_ITAV) *itavs)
 
     for (i = 0; i < n; i++) {
         itav = sk_OSSL_CMP_ITAV_value(itavs, i);
-        OBJ_obj2txt(buf, 128, OSSL_CMP_ITAV_get0_type(itav), 0);
-        CMP_info1("genp contains ITAV of type: %s", buf);
+        r = OBJ_obj2txt(buf, 128, OSSL_CMP_ITAV_get0_type(itav), 0);
+        if (r < 0)
+            CMP_err("could not get ITAV details");
+        else if (r == 0)
+            CMP_info("genp contains empty ITAV");
+        else
+            CMP_info1("genp contains ITAV of type: %s", buf);
     }
 }
 
@@ -2707,9 +2557,6 @@ static int get_opts(int argc, char **argv)
         case OPT_KEYFORM:
             opt_keyform_s = opt_str("keyform");
             break;
-        case OPT_CERTSFORM:
-            opt_certsform_s = opt_str("certsform");
-            break;
         case OPT_OTHERPASS:
             opt_otherpass = opt_str("otherpass");
             break;
@@ -2933,10 +2780,9 @@ int cmp_main(int argc, char **argv)
         }
     }
 
-    if ((cmp_ctx = OSSL_CMP_CTX_new()) == NULL) {
-        CMP_err("out of memory");
+    cmp_ctx = OSSL_CMP_CTX_new(app_get0_libctx(), app_get0_propq());
+    if (cmp_ctx == NULL)
         goto err;
-    }
     if (!OSSL_CMP_CTX_set_log_cb(cmp_ctx, print_to_bio_out)) {
         CMP_err1("cannot set up error reporting and logging for %s", prog);
         goto err;

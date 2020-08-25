@@ -18,6 +18,7 @@
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
+#include <openssl/provider.h>
 
 DEFINE_STACK_OF(X509)
 DEFINE_STACK_OF(PKCS7)
@@ -58,15 +59,16 @@ typedef enum OPTION_choice {
     OPT_CACERTS, OPT_NOOUT, OPT_INFO, OPT_CHAIN, OPT_TWOPASS, OPT_NOMACVER,
     OPT_DESCERT, OPT_EXPORT, OPT_ITER, OPT_NOITER, OPT_MACITER, OPT_NOMACITER,
     OPT_NOMAC, OPT_LMK, OPT_NODES, OPT_NOENC, OPT_MACALG, OPT_CERTPBE, OPT_KEYPBE,
-    OPT_INKEY, OPT_CERTFILE, OPT_NAME, OPT_CSP, OPT_CANAME,
+    OPT_INKEY, OPT_CERTFILE, OPT_PASSCERTS, OPT_NAME, OPT_CSP, OPT_CANAME,
     OPT_IN, OPT_OUT, OPT_PASSIN, OPT_PASSOUT, OPT_PASSWORD, OPT_CAPATH,
     OPT_CAFILE, OPT_CASTORE, OPT_NOCAPATH, OPT_NOCAFILE, OPT_NOCASTORE, OPT_ENGINE,
-    OPT_R_ENUM, OPT_PROV_ENUM
+    OPT_R_ENUM, OPT_PROV_ENUM, OPT_LEGACY_ALG
 } OPTION_CHOICE;
 
 const OPTIONS pkcs12_options[] = {
     OPT_SECTION("General"),
     {"help", OPT_HELP, '-', "Display this summary"},
+    {"legacy", OPT_LEGACY_ALG, '-', "use legacy algorithms"},
 #ifndef OPENSSL_NO_ENGINE
     {"engine", OPT_ENGINE, 's', "Use engine, possibly a hardware device"},
 #endif
@@ -85,6 +87,7 @@ const OPTIONS pkcs12_options[] = {
     OPT_SECTION("Input"),
     {"inkey", OPT_INKEY, 's', "Private key if not infile"},
     {"certfile", OPT_CERTFILE, '<', "Load certs from file"},
+    {"passcerts", OPT_PASSCERTS, 's', "Certificate file pass phrase source"},
     {"name", OPT_NAME, 's', "Use name as friendly name"},
     {"CSP", OPT_CSP, 's', "Microsoft CSP name"},
     {"caname", OPT_CANAME, 's',
@@ -117,9 +120,9 @@ const OPTIONS pkcs12_options[] = {
     OPT_SECTION("Encryption"),
 #ifndef OPENSSL_NO_RC2
     {"descert", OPT_DESCERT, '-',
-     "Encrypt output with 3DES (default RC2-40)"},
+     "Encrypt output with 3DES (default PBES2 with PBKDF2 and AES-256 CBC)"},
     {"certpbe", OPT_CERTPBE, 's',
-     "Certificate PBE algorithm (default RC2-40)"},
+     "Certificate PBE algorithm (default PBES2 with PBKDF2 and AES-256 CBC)"},
 #else
     {"descert", OPT_DESCERT, '-', "Encrypt output with 3DES (the default)"},
     {"certpbe", OPT_CERTPBE, 's', "Certificate PBE algorithm (default 3DES)"},
@@ -141,16 +144,13 @@ const OPTIONS pkcs12_options[] = {
 int pkcs12_main(int argc, char **argv)
 {
     char *infile = NULL, *outfile = NULL, *keyname = NULL, *certfile = NULL;
+    char *passcertsarg = NULL, *passcerts = NULL;
     char *name = NULL, *csp_name = NULL;
     char pass[PASSWD_BUF_SIZE] = "", macpass[PASSWD_BUF_SIZE] = "";
-    int export_cert = 0, options = 0, chain = 0, twopass = 0, keytype = 0;
+    int export_cert = 0, options = 0, chain = 0, twopass = 0, keytype = 0, use_legacy = 0;
     int iter = PKCS12_DEFAULT_ITER, maciter = PKCS12_DEFAULT_ITER;
-#ifndef OPENSSL_NO_RC2
-    int cert_pbe = NID_pbe_WithSHA1And40BitRC2_CBC;
-#else
-    int cert_pbe = NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
-#endif
-    int key_pbe = NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
+    int cert_pbe = NID_aes_256_cbc;
+    int key_pbe = NID_aes_256_cbc;
     int ret = 1, macver = 1, add_lmk = 0, private = 0;
     int noprompt = 0;
     char *passinarg = NULL, *passoutarg = NULL, *passarg = NULL;
@@ -162,7 +162,7 @@ int pkcs12_main(int argc, char **argv)
     BIO *in = NULL, *out = NULL;
     PKCS12 *p12 = NULL;
     STACK_OF(OPENSSL_STRING) *canames = NULL;
-    const EVP_CIPHER *enc = EVP_des_ede3_cbc();
+    const EVP_CIPHER *enc = EVP_aes_256_cbc();
     OPTION_CHOICE o;
 
     prog = opt_init(argc, argv, pkcs12_options);
@@ -262,6 +262,9 @@ int pkcs12_main(int argc, char **argv)
         case OPT_CERTFILE:
             certfile = opt_arg();
             break;
+        case OPT_PASSCERTS:
+            passcertsarg = opt_arg();
+            break;
         case OPT_NAME:
             name = opt_arg();
             break;
@@ -313,6 +316,9 @@ int pkcs12_main(int argc, char **argv)
         case OPT_ENGINE:
             e = setup_engine(opt_arg(), 0);
             break;
+        case OPT_LEGACY_ALG:
+            use_legacy = 1;
+            break;
         case OPT_PROV_CASES:
             if (!opt_provider(o))
                 goto end;
@@ -320,10 +326,41 @@ int pkcs12_main(int argc, char **argv)
         }
     }
     argc = opt_num_rest();
+
+    if (!export_cert && passcertsarg != NULL)
+        BIO_printf(bio_err,
+                   "Warning: -passcerts option ignored without -export\n");
+    if (use_legacy) {
+        /* load the legacy provider if not loaded already*/
+        if (!OSSL_PROVIDER_available(app_get0_libctx(), "legacy")) {
+            if (!app_provider_load(app_get0_libctx(), "legacy"))
+                goto end;
+            /* load the default provider explicitly */
+            if (!app_provider_load(app_get0_libctx(), "default"))
+                goto end;
+        }
+        if (cert_pbe != NID_pbe_WithSHA1And3_Key_TripleDES_CBC) {
+            /* Restore default algorithms */
+#ifndef OPENSSL_NO_RC2
+            cert_pbe = NID_pbe_WithSHA1And40BitRC2_CBC;
+#else
+            cert_pbe = NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
+#endif
+        }
+
+        key_pbe = NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
+        enc = EVP_des_ede3_cbc();
+    }
+
     if (argc != 0)
         goto opthelp;
 
     private = 1;
+
+    if (!app_passwd(passcertsarg, NULL, &passcerts, NULL)) {
+        BIO_printf(bio_err, "Error getting certificate file password\n");
+        goto end;
+    }
 
     if (passarg != NULL) {
         if (export_cert)
@@ -400,8 +437,7 @@ int pkcs12_main(int argc, char **argv)
 
         /* Load in all certs in input file */
         if (!(options & NOCERTS)) {
-            if (!load_certs(infile, &certs, FORMAT_PEM, NULL,
-                            "certificates"))
+            if (!load_certs(infile, &certs, passin, "input certificates"))
                 goto export_end;
 
             if (key != NULL) {
@@ -429,7 +465,7 @@ int pkcs12_main(int argc, char **argv)
 
         /* Add any more certificates asked for */
         if (certfile != NULL) {
-            if (!load_certs(certfile, &certs, FORMAT_PEM, NULL,
+            if (!load_certs(certfile, &certs, passcerts,
                             "certificates from certfile"))
                 goto export_end;
         }
@@ -628,6 +664,7 @@ int pkcs12_main(int argc, char **argv)
     BIO_free_all(out);
     sk_OPENSSL_STRING_free(canames);
     OPENSSL_free(badpass);
+    OPENSSL_free(passcerts);
     OPENSSL_free(passin);
     OPENSSL_free(passout);
     return ret;
@@ -764,6 +801,16 @@ int dump_certs_pkeys_bag(BIO *out, const PKCS12_SAFEBAG *bag,
         ret = PEM_write_bio_X509(out, x509);
         X509_free(x509);
         break;
+
+    case NID_secretBag:
+        if (options & INFO) 
+            BIO_printf(bio_err, "Secret bag\n");
+        print_attribs(out, attrs, "Bag Attributes");
+        BIO_printf(bio_err, "Bag Type: ");
+        i2a_ASN1_OBJECT(bio_err, PKCS12_SAFEBAG_get0_bag_type(bag));
+        BIO_printf(bio_err, "\nBag Value: ");
+        print_attribute(out, PKCS12_SAFEBAG_get0_bag_obj(bag));
+        return 1;
 
     case NID_safeContentsBag:
         if (options & INFO)
@@ -928,6 +975,10 @@ void print_attribute(BIO *out, const ASN1_TYPE *av)
                                 av->value.bmpstring->length);
         BIO_printf(out, "%s\n", value);
         OPENSSL_free(value);
+        break;
+
+    case V_ASN1_UTF8STRING:
+        BIO_printf(out, "%s\n", av->value.utf8string->data);
         break;
 
     case V_ASN1_OCTET_STRING:

@@ -157,11 +157,9 @@ int storeutl_main(int argc, char *argv[])
                            prog);
                 goto end;
             }
-            if ((subject = parse_name(opt_arg(), MBSTRING_UTF8, 1)) == NULL) {
-                BIO_printf(bio_err, "%s: can't parse subject argument.\n",
-                           prog);
+            subject = parse_name(opt_arg(), MBSTRING_UTF8, 1, "subject");
+            if (subject == NULL)
                 goto end;
-            }
             break;
         case OPT_CRITERION_ISSUER:
             if (criterion != 0
@@ -177,11 +175,9 @@ int storeutl_main(int argc, char *argv[])
                            prog);
                 goto end;
             }
-            if ((issuer = parse_name(opt_arg(), MBSTRING_UTF8, 1)) == NULL) {
-                BIO_printf(bio_err, "%s: can't parse issuer argument.\n",
-                           prog);
+            issuer = parse_name(opt_arg(), MBSTRING_UTF8, 1, "issuer");
+            if (issuer == NULL)
                 goto end;
-            }
             break;
         case OPT_CRITERION_SERIAL:
             if (criterion != 0
@@ -453,6 +449,13 @@ static int process(const char *uri, const UI_METHOD *uimeth, PW_CB_DATA *uidata,
             if (!noout)
                 PEM_write_bio_Parameters(out,
                                          OSSL_STORE_INFO_get0_PARAMS(info));
+            break;
+        case OSSL_STORE_INFO_PUBKEY:
+            if (text)
+                EVP_PKEY_print_public(out, OSSL_STORE_INFO_get0_PUBKEY(info),
+                                      0, NULL);
+            if (!noout)
+                PEM_write_bio_PUBKEY(out, OSSL_STORE_INFO_get0_PUBKEY(info));
             break;
         case OSSL_STORE_INFO_PKEY:
             if (text)

@@ -29,11 +29,12 @@
 #include <openssl/engine.h>
 #include <openssl/params.h>
 #include <openssl/param_build.h>
-#include <openssl/serializer.h>
+#include <openssl/encoder.h>
 #include <openssl/core_names.h>
 
 #include "crypto/asn1.h"
 #include "crypto/evp.h"
+#include "crypto/ecx.h"
 #include "internal/evp.h"
 #include "internal/provider.h"
 #include "evp_local.h"
@@ -266,6 +267,10 @@ static int evp_pkey_cmp_any(const EVP_PKEY *a, const EVP_PKEY *b,
 
     /* If we still don't have matching keymgmt implementations, we give up */
     if (keymgmt1 != keymgmt2)
+        return -2;
+
+    /* If the keymgmt implementations are NULL, the export failed */
+    if (keymgmt1 == NULL)
         return -2;
 
     return evp_keymgmt_match(keymgmt1, keydata1, keydata2, selection);
@@ -715,6 +720,8 @@ int EVP_PKEY_assign(EVP_PKEY *pkey, int type, void *key)
 
 void *EVP_PKEY_get0(const EVP_PKEY *pkey)
 {
+    if (pkey == NULL)
+        return NULL;
     if (!evp_pkey_downgrade((EVP_PKEY *)pkey)) {
         ERR_raise(ERR_LIB_EVP, EVP_R_INACCESSIBLE_KEY);
         return NULL;
@@ -855,6 +862,54 @@ EC_KEY *EVP_PKEY_get1_EC_KEY(EVP_PKEY *pkey)
         EC_KEY_up_ref(ret);
     return ret;
 }
+
+static int EVP_PKEY_set1_ECX_KEY(EVP_PKEY *pkey, int type, ECX_KEY *key)
+{
+    int ret = EVP_PKEY_assign(pkey, type, key);
+    if (ret)
+        ecx_key_up_ref(key);
+    return ret;
+}
+
+static ECX_KEY *EVP_PKEY_get0_ECX_KEY(const EVP_PKEY *pkey, int type)
+{
+    if (!evp_pkey_downgrade((EVP_PKEY *)pkey)) {
+        ERR_raise(ERR_LIB_EVP, EVP_R_INACCESSIBLE_KEY);
+        return NULL;
+    }
+    if (EVP_PKEY_base_id(pkey) != type) {
+        ERR_raise(ERR_LIB_EVP, EVP_R_EXPECTING_A_ECX_KEY);
+        return NULL;
+    }
+    return pkey->pkey.ecx;
+}
+
+static ECX_KEY *EVP_PKEY_get1_ECX_KEY(EVP_PKEY *pkey, int type)
+{
+    ECX_KEY *ret = EVP_PKEY_get0_ECX_KEY(pkey, type);
+    if (ret != NULL)
+        ecx_key_up_ref(ret);
+    return ret;
+}
+
+#  define IMPLEMENT_ECX_VARIANT(NAME)                                   \
+    int EVP_PKEY_set1_##NAME(EVP_PKEY *pkey, ECX_KEY *key)              \
+    {                                                                   \
+        return EVP_PKEY_set1_ECX_KEY(pkey, EVP_PKEY_##NAME, key);       \
+    }                                                                   \
+    ECX_KEY *EVP_PKEY_get0_##NAME(const EVP_PKEY *pkey)                 \
+    {                                                                   \
+        return EVP_PKEY_get0_ECX_KEY(pkey, EVP_PKEY_##NAME);            \
+    }                                                                   \
+    ECX_KEY *EVP_PKEY_get1_##NAME(EVP_PKEY *pkey)                       \
+    {                                                                   \
+        return EVP_PKEY_get1_ECX_KEY(pkey, EVP_PKEY_##NAME);            \
+    }
+IMPLEMENT_ECX_VARIANT(X25519)
+IMPLEMENT_ECX_VARIANT(X448)
+IMPLEMENT_ECX_VARIANT(ED25519)
+IMPLEMENT_ECX_VARIANT(ED448)
+
 # endif
 
 # ifndef OPENSSL_NO_DH
@@ -940,6 +995,20 @@ int EVP_PKEY_is_a(const EVP_PKEY *pkey, const char *name)
 #ifndef OPENSSL_NO_EC
         else if (strcasecmp(name, "EC") == 0)
             type = EVP_PKEY_EC;
+        else if (strcasecmp(name, "ED25519") == 0)
+            type = EVP_PKEY_ED25519;
+        else if (strcasecmp(name, "ED448") == 0)
+            type = EVP_PKEY_ED448;
+        else if (strcasecmp(name, "X25519") == 0)
+            type = EVP_PKEY_X25519;
+        else if (strcasecmp(name, "X448") == 0)
+            type = EVP_PKEY_X448;
+#endif
+#ifndef OPENSSL_NO_DH
+        else if (strcasecmp(name, "DH") == 0)
+            type = EVP_PKEY_DH;
+        else if (strcasecmp(name, "X9.42 DH") == 0)
+            type = EVP_PKEY_DHX;
 #endif
 #ifndef OPENSSL_NO_DSA
         else if (strcasecmp(name, "DSA") == 0)
@@ -1076,23 +1145,23 @@ static int unsup_alg(BIO *out, const EVP_PKEY *pkey, int indent,
 }
 
 static int print_pkey(const EVP_PKEY *pkey, BIO *out, int indent,
-                      const char *propquery /* For provided serialization */,
+                      const char *propquery /* For provided encoding */,
                       int (*legacy_print)(BIO *out, const EVP_PKEY *pkey,
                                           int indent, ASN1_PCTX *pctx),
                       ASN1_PCTX *legacy_pctx /* For legacy print */)
 {
     int pop_f_prefix;
     long saved_indent;
-    OSSL_SERIALIZER_CTX *ctx = NULL;
+    OSSL_ENCODER_CTX *ctx = NULL;
     int ret = -2;                /* default to unsupported */
 
     if (!print_set_indent(&out, &pop_f_prefix, &saved_indent, indent))
         return 0;
 
-    ctx = OSSL_SERIALIZER_CTX_new_by_EVP_PKEY(pkey, propquery);
-    if (OSSL_SERIALIZER_CTX_get_serializer(ctx) != NULL)
-        ret = OSSL_SERIALIZER_to_bio(ctx, out);
-    OSSL_SERIALIZER_CTX_free(ctx);
+    ctx = OSSL_ENCODER_CTX_new_by_EVP_PKEY(pkey, propquery);
+    if (OSSL_ENCODER_CTX_get_encoder(ctx) != NULL)
+        ret = OSSL_ENCODER_to_bio(ctx, out);
+    OSSL_ENCODER_CTX_free(ctx);
 
     if (ret != -2)
         goto end;
@@ -1111,7 +1180,7 @@ static int print_pkey(const EVP_PKEY *pkey, BIO *out, int indent,
 int EVP_PKEY_print_public(BIO *out, const EVP_PKEY *pkey,
                           int indent, ASN1_PCTX *pctx)
 {
-    return print_pkey(pkey, out, indent, OSSL_SERIALIZER_PUBKEY_TO_TEXT_PQ,
+    return print_pkey(pkey, out, indent, OSSL_ENCODER_PUBKEY_TO_TEXT_PQ,
                       (pkey->ameth != NULL ? pkey->ameth->pub_print : NULL),
                       pctx);
 }
@@ -1119,7 +1188,7 @@ int EVP_PKEY_print_public(BIO *out, const EVP_PKEY *pkey,
 int EVP_PKEY_print_private(BIO *out, const EVP_PKEY *pkey,
                            int indent, ASN1_PCTX *pctx)
 {
-    return print_pkey(pkey, out, indent, OSSL_SERIALIZER_PrivateKey_TO_TEXT_PQ,
+    return print_pkey(pkey, out, indent, OSSL_ENCODER_PrivateKey_TO_TEXT_PQ,
                       (pkey->ameth != NULL ? pkey->ameth->priv_print : NULL),
                       pctx);
 }
@@ -1127,7 +1196,7 @@ int EVP_PKEY_print_private(BIO *out, const EVP_PKEY *pkey,
 int EVP_PKEY_print_params(BIO *out, const EVP_PKEY *pkey,
                           int indent, ASN1_PCTX *pctx)
 {
-    return print_pkey(pkey, out, indent, OSSL_SERIALIZER_Parameters_TO_TEXT_PQ,
+    return print_pkey(pkey, out, indent, OSSL_ENCODER_Parameters_TO_TEXT_PQ,
                       (pkey->ameth != NULL ? pkey->ameth->param_print : NULL),
                       pctx);
 }
@@ -1141,19 +1210,18 @@ static int legacy_asn1_ctrl_to_param(EVP_PKEY *pkey, int op,
     case ASN1_PKEY_CTRL_DEFAULT_MD_NID:
         {
             char mdname[80] = "";
-            int nid;
             int rv = EVP_PKEY_get_default_digest_name(pkey, mdname,
                                                       sizeof(mdname));
 
-            if (rv <= 0)
-                return rv;
-            nid = OBJ_sn2nid(mdname);
-            if (nid == NID_undef)
-                nid = OBJ_ln2nid(mdname);
-            if (nid == NID_undef)
-                return 0;
-            *(int *)arg2 = nid;
-            return 1;
+            if (rv > 0) {
+                int nid;
+
+                nid = OBJ_sn2nid(mdname);
+                if (nid == NID_undef)
+                    nid = OBJ_ln2nid(mdname);
+                *(int *)arg2 = nid;
+            }
+            return rv;
         }
     default:
         return -2;
@@ -1821,7 +1889,7 @@ const OSSL_PARAM *EVP_PKEY_gettable_params(EVP_PKEY *pkey)
         || pkey->keymgmt == NULL
         || pkey->keydata == NULL)
         return 0;
-    return evp_keymgmt_gettable_params(pkey->keymgmt);
+    return EVP_KEYMGMT_gettable_params(pkey->keymgmt);
 }
 
 int EVP_PKEY_get_bn_param(EVP_PKEY *pkey, const char *key_name, BIGNUM **bn)
