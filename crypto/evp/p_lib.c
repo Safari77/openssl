@@ -381,10 +381,8 @@ static EVP_PKEY *new_raw_key_int(OPENSSL_CTX *libctx,
                                          strtype != NULL ? strtype
                                                          : OBJ_nid2sn(nidtype),
                                          propq);
-        if (ctx == NULL) {
-            EVPerr(0, ERR_R_MALLOC_FAILURE);
+        if (ctx == NULL)
             goto err;
-        }
         /* May fail if no provider available */
         ERR_set_mark();
         if (EVP_PKEY_key_fromdata_init(ctx) == 1) {
@@ -586,62 +584,78 @@ int EVP_PKEY_get_raw_public_key(const EVP_PKEY *pkey, unsigned char *pub,
     return 1;
 }
 
-EVP_PKEY *EVP_PKEY_new_CMAC_key(ENGINE *e, const unsigned char *priv,
-                                size_t len, const EVP_CIPHER *cipher)
+static EVP_PKEY *new_cmac_key_int(const unsigned char *priv, size_t len,
+                                  const char *cipher_name,
+                                  const EVP_CIPHER *cipher, OPENSSL_CTX *libctx,
+                                  const char *propq, ENGINE *e)
 {
 # ifndef OPENSSL_NO_CMAC
 #  ifndef OPENSSL_NO_ENGINE
     const char *engine_id = e != NULL ? ENGINE_get_id(e) : NULL;
 #  endif
-    const char *cipher_name = EVP_CIPHER_name(cipher);
-    const OSSL_PROVIDER *prov = EVP_CIPHER_provider(cipher);
-    OPENSSL_CTX *libctx =
-        prov == NULL ? NULL : ossl_provider_library_context(prov);
-    EVP_PKEY *ret = EVP_PKEY_new();
-    EVP_MAC *cmac = EVP_MAC_fetch(libctx, OSSL_MAC_NAME_CMAC, NULL);
-    EVP_MAC_CTX *cmctx = cmac != NULL ? EVP_MAC_CTX_new(cmac) : NULL;
-    OSSL_PARAM params[4];
-    size_t paramsn = 0;
+    OSSL_PARAM params[5], *p = params;
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *ctx;
 
-    if (ret == NULL
-        || cmctx == NULL
-        || !pkey_set_type(ret, e, EVP_PKEY_CMAC, NULL, -1, NULL)) {
-        /* EVPerr already called */
+    if (cipher != NULL)
+        cipher_name = EVP_CIPHER_name(cipher);
+
+    if (cipher_name == NULL) {
+        EVPerr(0, EVP_R_KEY_SETUP_FAILED);
+        return NULL;
+    }
+
+    ctx = EVP_PKEY_CTX_new_from_name(libctx, "CMAC", propq);
+    if (ctx == NULL)
+        goto err;
+
+    if (!EVP_PKEY_key_fromdata_init(ctx)) {
+        EVPerr(0, EVP_R_KEY_SETUP_FAILED);
         goto err;
     }
 
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PRIV_KEY,
+                                            (void *)priv, len);
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_CIPHER,
+                                            (char *)cipher_name, 0);
+    if (propq != NULL)
+        *p++ = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_PROPERTIES,
+                                                (char *)propq, 0);
 #  ifndef OPENSSL_NO_ENGINE
     if (engine_id != NULL)
-        params[paramsn++] =
-            OSSL_PARAM_construct_utf8_string("engine", (char *)engine_id, 0);
+        *p++ = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_ENGINE,
+                                                (char *)engine_id, 0);
 #  endif
+    *p = OSSL_PARAM_construct_end();
 
-    params[paramsn++] =
-        OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_CIPHER,
-                                         (char *)cipher_name, 0);
-    params[paramsn++] =
-        OSSL_PARAM_construct_octet_string(OSSL_MAC_PARAM_KEY,
-                                          (char *)priv, len);
-    params[paramsn] = OSSL_PARAM_construct_end();
-
-    if (!EVP_MAC_CTX_set_params(cmctx, params)) {
-        EVPerr(EVP_F_EVP_PKEY_NEW_CMAC_KEY, EVP_R_KEY_SETUP_FAILED);
+    if (!EVP_PKEY_fromdata(ctx, &pkey, params)) {
+        EVPerr(0, EVP_R_KEY_SETUP_FAILED);
         goto err;
     }
 
-    ret->pkey.ptr = cmctx;
-    return ret;
-
  err:
-    EVP_PKEY_free(ret);
-    EVP_MAC_CTX_free(cmctx);
-    EVP_MAC_free(cmac);
-    return NULL;
+    EVP_PKEY_CTX_free(ctx);
+
+    return pkey;
 # else
-    EVPerr(EVP_F_EVP_PKEY_NEW_CMAC_KEY,
-           EVP_R_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE);
+    EVPerr(0, EVP_R_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE);
     return NULL;
 # endif
+}
+
+EVP_PKEY *EVP_PKEY_new_CMAC_key_with_libctx(const unsigned char *priv,
+                                            size_t len,
+                                            const char *cipher_name,
+                                            OPENSSL_CTX *libctx,
+                                            const char *propq)
+{
+    return new_cmac_key_int(priv, len, cipher_name, NULL, libctx, propq, NULL);
+}
+
+EVP_PKEY *EVP_PKEY_new_CMAC_key(ENGINE *e, const unsigned char *priv,
+                                size_t len, const EVP_CIPHER *cipher)
+{
+    return new_cmac_key_int(priv, len, NULL, cipher, NULL, NULL, e);
 }
 
 int EVP_PKEY_set_type(EVP_PKEY *pkey, int type)
@@ -972,51 +986,62 @@ int EVP_PKEY_base_id(const EVP_PKEY *pkey)
     return EVP_PKEY_type(pkey->type);
 }
 
+#ifndef FIPS_MODULE
+int evp_pkey_name2type(const char *name)
+{
+    /*
+     * These hard coded cases are pure hackery to get around the fact
+     * that names in crypto/objects/objects.txt are a mess.  There is
+     * no "EC", and "RSA" leads to the NID for 2.5.8.1.1, an OID that's
+     * fallen out in favor of { pkcs-1 1 }, i.e. 1.2.840.113549.1.1.1,
+     * the NID of which is used for EVP_PKEY_RSA.  Strangely enough,
+     * "DSA" is accurate...  but still, better be safe and hard-code
+     * names that we know.
+     * On a similar topic, EVP_PKEY_type(EVP_PKEY_SM2) will result in
+     * EVP_PKEY_EC, because of aliasing.
+     * TODO Clean this away along with all other #legacy support.
+     */
+    int type = NID_undef;
+
+    if (strcasecmp(name, "RSA") == 0)
+        type = EVP_PKEY_RSA;
+    else if (strcasecmp(name, "RSA-PSS") == 0)
+        type = EVP_PKEY_RSA_PSS;
+    else if (strcasecmp(name, "EC") == 0)
+        type = EVP_PKEY_EC;
+    else if (strcasecmp(name, "ED25519") == 0)
+        type = EVP_PKEY_ED25519;
+    else if (strcasecmp(name, "ED448") == 0)
+        type = EVP_PKEY_ED448;
+    else if (strcasecmp(name, "X25519") == 0)
+        type = EVP_PKEY_X25519;
+    else if (strcasecmp(name, "X448") == 0)
+        type = EVP_PKEY_X448;
+    else if (strcasecmp(name, "SM2") == 0)
+        type = EVP_PKEY_SM2;
+    else if (strcasecmp(name, "DH") == 0)
+        type = EVP_PKEY_DH;
+    else if (strcasecmp(name, "X9.42 DH") == 0)
+        type = EVP_PKEY_DHX;
+    else if (strcasecmp(name, "DSA") == 0)
+        type = EVP_PKEY_DSA;
+
+    if (type == NID_undef)
+        type = EVP_PKEY_type(OBJ_sn2nid(name));
+    if (type == NID_undef)
+        type = EVP_PKEY_type(OBJ_ln2nid(name));
+
+    return type;
+}
+#endif
+
 int EVP_PKEY_is_a(const EVP_PKEY *pkey, const char *name)
 {
 #ifndef FIPS_MODULE
     if (pkey->keymgmt == NULL) {
-        /*
-         * These hard coded cases are pure hackery to get around the fact
-         * that names in crypto/objects/objects.txt are a mess.  There is
-         * no "EC", and "RSA" leads to the NID for 2.5.8.1.1, an OID that's
-         * fallen out in favor of { pkcs-1 1 }, i.e. 1.2.840.113549.1.1.1,
-         * the NID of which is used for EVP_PKEY_RSA.  Strangely enough,
-         * "DSA" is accurate...  but still, better be safe and hard-code
-         * names that we know.
-         * TODO Clean this away along with all other #legacy support.
-         */
-        int type;
+        int type = evp_pkey_name2type(name);
 
-        if (strcasecmp(name, "RSA") == 0)
-            type = EVP_PKEY_RSA;
-        else if (strcasecmp(name, "RSA-PSS") == 0)
-            type = EVP_PKEY_RSA_PSS;
-#ifndef OPENSSL_NO_EC
-        else if (strcasecmp(name, "EC") == 0)
-            type = EVP_PKEY_EC;
-        else if (strcasecmp(name, "ED25519") == 0)
-            type = EVP_PKEY_ED25519;
-        else if (strcasecmp(name, "ED448") == 0)
-            type = EVP_PKEY_ED448;
-        else if (strcasecmp(name, "X25519") == 0)
-            type = EVP_PKEY_X25519;
-        else if (strcasecmp(name, "X448") == 0)
-            type = EVP_PKEY_X448;
-#endif
-#ifndef OPENSSL_NO_DH
-        else if (strcasecmp(name, "DH") == 0)
-            type = EVP_PKEY_DH;
-        else if (strcasecmp(name, "X9.42 DH") == 0)
-            type = EVP_PKEY_DHX;
-#endif
-#ifndef OPENSSL_NO_DSA
-        else if (strcasecmp(name, "DSA") == 0)
-            type = EVP_PKEY_DSA;
-#endif
-        else
-            type = EVP_PKEY_type(OBJ_sn2nid(name));
-        return EVP_PKEY_type(pkey->type) == type;
+        return pkey->type == type;
     }
 #endif
     return EVP_KEYMGMT_is_a(pkey->keymgmt, name);

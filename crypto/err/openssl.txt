@@ -2114,6 +2114,7 @@ CMP_R_ERROR_SETTING_CERTHASH:128:error setting certhash
 CMP_R_ERROR_UNEXPECTED_CERTCONF:160:error unexpected certconf
 CMP_R_ERROR_VALIDATING_PROTECTION:140:error validating protection
 CMP_R_ERROR_VALIDATING_SIGNATURE:171:error validating signature
+CMP_R_FAILED_BUILDING_OWN_CHAIN:164:failed building own chain
 CMP_R_FAILED_EXTRACTING_PUBKEY:141:failed extracting pubkey
 CMP_R_FAILURE_OBTAINING_RANDOM:110:failure obtaining random
 CMP_R_FAIL_INFO_OUT_OF_RANGE:129:fail info out of range
@@ -2710,8 +2711,8 @@ OCSP_R_UNKNOWN_MESSAGE_DIGEST:119:unknown message digest
 OCSP_R_UNKNOWN_NID:120:unknown nid
 OCSP_R_UNSUPPORTED_REQUESTORNAME_TYPE:129:unsupported requestorname type
 OSSL_DECODER_R_MISSING_GET_PARAMS:100:missing get params
-OSSL_ENCODER_R_INCORRECT_PROPERTY_QUERY:100:incorrect property query
 OSSL_ENCODER_R_ENCODER_NOT_FOUND:101:encoder not found
+OSSL_ENCODER_R_INCORRECT_PROPERTY_QUERY:100:incorrect property query
 OSSL_STORE_R_AMBIGUOUS_CONTENT_TYPE:107:ambiguous content type
 OSSL_STORE_R_BAD_PASSWORD_READ:115:bad password read
 OSSL_STORE_R_ERROR_VERIFYING_PKCS12_MAC:113:error verifying pkcs12 mac
@@ -2768,6 +2769,7 @@ PEM_R_UNEXPECTED_DEK_IV:130:unexpected dek iv
 PEM_R_UNSUPPORTED_CIPHER:113:unsupported cipher
 PEM_R_UNSUPPORTED_ENCRYPTION:114:unsupported encryption
 PEM_R_UNSUPPORTED_KEY_COMPONENTS:126:unsupported key components
+PEM_R_UNSUPPORTED_PUBLIC_KEY_TYPE:110:unsupported public key type
 PKCS12_R_CANT_PACK_STRUCTURE:100:cant pack structure
 PKCS12_R_CONTENT_TYPE_NOT_DATA:121:content type not data
 PKCS12_R_DECODE_ERROR:101:decode error
@@ -2935,12 +2937,15 @@ PROV_R_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE:178:\
 PROV_R_OUTPUT_BUFFER_TOO_SMALL:106:output buffer too small
 PROV_R_PARENT_LOCKING_NOT_ENABLED:182:parent locking not enabled
 PROV_R_PARENT_STRENGTH_TOO_WEAK:194:parent strength too weak
+PROV_R_PATH_MUST_BE_ABSOLUTE:219:path must be absolute
 PROV_R_PERSONALISATION_STRING_TOO_LONG:195:personalisation string too long
 PROV_R_PSS_SALTLEN_TOO_SMALL:172:pss saltlen too small
 PROV_R_READ_KEY:159:read key
 PROV_R_REQUEST_TOO_LARGE_FOR_DRBG:196:request too large for drbg
 PROV_R_REQUIRE_CTR_MODE_CIPHER:206:require ctr mode cipher
 PROV_R_RESEED_ERROR:197:reseed error
+PROV_R_SEARCH_ONLY_SUPPORTED_FOR_DIRECTORIES:222:\
+	search only supported for directories
 PROV_R_SELF_TEST_KAT_FAILURE:215:self test kat failure
 PROV_R_SELF_TEST_POST_FAILURE:216:self test post failure
 PROV_R_TAG_NOTSET:119:tag notset
@@ -2962,6 +2967,7 @@ PROV_R_UNSUPPORTED_CEK_ALG:145:unsupported cek alg
 PROV_R_UNSUPPORTED_KEY_SIZE:153:unsupported key size
 PROV_R_UNSUPPORTED_MAC_TYPE:137:unsupported mac type
 PROV_R_UNSUPPORTED_NUMBER_OF_ROUNDS:152:unsupported number of rounds
+PROV_R_URI_AUTHORITY_UNSUPPORTED:223:uri authority unsupported
 PROV_R_VALUE_ERROR:138:value error
 PROV_R_WRONG_FINAL_BLOCK_LENGTH:107:wrong final block length
 PROV_R_WRONG_OUTPUT_BUFFER_SIZE:139:wrong output buffer size
@@ -3296,6 +3302,7 @@ SSL_R_NO_SHARED_CIPHER:193:no shared cipher
 SSL_R_NO_SHARED_GROUPS:410:no shared groups
 SSL_R_NO_SHARED_SIGNATURE_ALGORITHMS:376:no shared signature algorithms
 SSL_R_NO_SRTP_PROFILES:359:no srtp profiles
+SSL_R_NO_SUITABLE_DIGEST_ALGORITHM:297:no suitable digest algorithm
 SSL_R_NO_SUITABLE_KEY_SHARE:101:no suitable key share
 SSL_R_NO_SUITABLE_SIGNATURE_ALGORITHM:118:no suitable signature algorithm
 SSL_R_NO_VALID_SCTS:216:no valid scts

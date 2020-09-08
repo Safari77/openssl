@@ -278,6 +278,8 @@ extern const OSSL_DISPATCH ed25519_keymgmt_functions[];
 extern const OSSL_DISPATCH ed448_keymgmt_functions[];
 extern const OSSL_DISPATCH ec_keymgmt_functions[];
 extern const OSSL_DISPATCH kdf_keymgmt_functions[];
+extern const OSSL_DISPATCH mac_legacy_keymgmt_functions[];
+extern const OSSL_DISPATCH cmac_legacy_keymgmt_functions[];
 
 /* Key Exchange */
 extern const OSSL_DISPATCH dh_keyexch_functions[];
@@ -294,7 +296,10 @@ extern const OSSL_DISPATCH rsa_signature_functions[];
 extern const OSSL_DISPATCH ed25519_signature_functions[];
 extern const OSSL_DISPATCH ed448_signature_functions[];
 extern const OSSL_DISPATCH ecdsa_signature_functions[];
-
+extern const OSSL_DISPATCH mac_legacy_hmac_signature_functions[];
+extern const OSSL_DISPATCH mac_legacy_siphash_signature_functions[];
+extern const OSSL_DISPATCH mac_legacy_poly1305_signature_functions[];
+extern const OSSL_DISPATCH mac_legacy_cmac_signature_functions[];
 
 /* Asym Cipher */
 extern const OSSL_DISPATCH rsa_asym_cipher_functions[];
@@ -380,3 +385,5 @@ extern const OSSL_DISPATCH der_to_rsapss_decoder_functions[];
 extern const OSSL_DISPATCH msblob_to_rsa_decoder_functions[];
 extern const OSSL_DISPATCH pvk_to_rsa_decoder_functions[];
 extern const OSSL_DISPATCH pem_to_der_decoder_functions[];
+
+extern const OSSL_DISPATCH file_store_functions[];

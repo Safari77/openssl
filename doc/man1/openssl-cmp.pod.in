@@ -32,6 +32,7 @@ B<openssl> B<cmp>
 [B<-ref> I<value>]
 [B<-secret> I<arg>]
 [B<-cert> I<filename>]
+[B<-own_trusted> I<filenames>]
 [B<-key> I<filename>]
 [B<-keypass> I<arg>]
 [B<-digest> I<name>]
@@ -63,6 +64,7 @@ B<openssl> B<cmp>
 [B<-implicit_confirm>]
 [B<-disable_confirm>]
 [B<-certout> I<filename>]
+[B<-chainout> I<filename>]
 
 [B<-oldcert> I<filename>]
 [B<-revreason> I<number>]
@@ -81,6 +83,7 @@ B<openssl> B<cmp>
 [B<-tls_trusted> I<filenames>]
 [B<-tls_host> I<name>]
 
+[B<-verbosity> I<level>]
 [B<-batch>]
 [B<-repeat> I<number>]
 [B<-reqin>] I<filenames>
@@ -334,7 +337,7 @@ is provided via the B<-newkey> or B<-key> options.
 
 =item B<-csr> I<filename>
 
-CSR in PKCS#10 format to use in legacy P10CR messages.
+PKCS#10 CSR in PEM or DER format to use in legacy P10CR messages.
 
 =item B<-out_trusted> I<filenames>
 
@@ -376,6 +379,10 @@ B<WARNING:> This leads to behavior violating RFC 4210.
 =item B<-certout> I<filename>
 
 The file where the newly enrolled certificate should be saved.
+
+=item B<-chainout> I<filename>
+
+The file where the chain of the newly enrolled certificate should be saved.
 
 =back
 
@@ -611,7 +618,7 @@ B<PASS PHRASE ARGUMENTS> section in L<openssl(1)>.
 
 =item B<-cert> I<filename>
 
-The client's current certificate.
+The client's current CMP signer certificate.
 Requires the corresponding key to be given with B<-key>.
 The subject of this certificate will be used as sender of outgoing CMP messages,
 while the subject of B<-oldcert> or B<-subjectName> may provide fallback values.
@@ -622,6 +629,16 @@ using an external entity certificate as defined in appendix E.7 of RFC 4210.
 For Key Update Request (KUR) messages this is also used as
 the certificate to be updated if the B<-oldcert> option is not given.
 If the file includes further certs, they are appended to the untrusted certs.
+
+=item B<-own_trusted> I<filenames>
+
+If this list of certificates is provided then the chain built for
+the CMP signer certificate given with the B<-cert> option is verified
+using the given certificates as trust anchors.
+
+Multiple filenames may be given, separated by commas and/or whitespace
+(where in the latter case the whole argument must be enclosed in "...").
+Each source may contain multiple certificates.
 
 =item B<-key> I<filename>
 
@@ -688,6 +705,7 @@ The only value with effect is B<ENGINE>.
 =item B<-otherpass> I<arg>
 
 Pass phrase source for certificate given with the B<-trusted>, B<-untrusted>,
+B<-own_trusted>,
 B<-out_trusted>, B<-extracerts>, B<-tls_extra>, or B<-tls_trusted> options.
 If not given here, the password will be prompted for if needed.
 
@@ -769,6 +787,13 @@ If not given it defaults to the B<-server> address.
 =head2 Client-side debugging options
 
 =over 4
+
+=item B<-verbosity> I<level>
+
+Level of verbosity for logging, error output, etc.
+0 = EMERG, 1 = ALERT, 2 = CRIT, 3 = ERR, 4 = WARN, 5 = NOTE,
+6 = INFO, 7 = DEBUG, 8 = TRACE.
+Defaults to 6 = INFO.
 
 =item B<-batch>
 

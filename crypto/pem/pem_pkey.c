@@ -7,6 +7,9 @@
  * https://www.openssl.org/source/license.html
  */
 
+/* We need to use some STORE deprecated APIs */
+#define OPENSSL_SUPPRESS_DEPRECATED
+
 #include <stdio.h>
 #include "internal/cryptlib.h"
 #include <openssl/buffer.h>
@@ -58,11 +61,13 @@ static EVP_PKEY *pem_read_bio_key(BIO *bp, EVP_PKEY **x,
                                  NULL, NULL)) == NULL)
         goto err;
 #ifndef OPENSSL_NO_SECURE_HEAP
-   if (try_secure) {
+# ifndef OPENSSL_NO_DEPRECATED_3_0
+    if (try_secure) {
         int on = 1;
         if (!OSSL_STORE_ctrl(ctx, OSSL_STORE_C_USE_SECMEM, &on))
             goto err;
     }
+# endif
 #endif
 
     while (!OSSL_STORE_eof(ctx)
@@ -166,6 +171,11 @@ int PEM_write_bio_PrivateKey_traditional(BIO *bp, const EVP_PKEY *x,
                                          pem_password_cb *cb, void *u)
 {
     char pem_str[80];
+
+    if (x->ameth == NULL || x->ameth->old_priv_encode == NULL) {
+        ERR_raise(ERR_LIB_PEM, PEM_R_UNSUPPORTED_PUBLIC_KEY_TYPE);
+        return 0;
+    }
     BIO_snprintf(pem_str, 80, "%s PRIVATE KEY", x->ameth->pem_str);
     return PEM_ASN1_write_bio((i2d_of_void *)i2d_PrivateKey,
                               pem_str, bp, x, enc, kstr, klen, cb, u);

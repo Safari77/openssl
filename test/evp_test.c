@@ -1161,8 +1161,10 @@ static int mac_test_run_pkey(EVP_TEST *t)
             t->err = "MAC_KEY_CREATE_ERROR";
             goto err;
         }
-        key = EVP_PKEY_new_CMAC_key(NULL, expected->key, expected->key_len,
-                                    cipher);
+        key = EVP_PKEY_new_CMAC_key_with_libctx(expected->key,
+                                                expected->key_len,
+                                                EVP_CIPHER_name(cipher),
+                                                libctx, NULL);
     } else {
         key = EVP_PKEY_new_raw_private_key_with_libctx(libctx,
                                                        OBJ_nid2sn(expected->type),
@@ -3251,7 +3253,7 @@ static void free_key_list(KEY_LIST *lst)
  */
 static int key_unsupported(void)
 {
-    long err = ERR_peek_error();
+    long err = ERR_peek_last_error();
 
     if (ERR_GET_LIB(err) == ERR_LIB_EVP
             && (ERR_GET_REASON(err) == EVP_R_UNSUPPORTED_ALGORITHM
@@ -3266,7 +3268,8 @@ static int key_unsupported(void)
      * disabled).
      */
     if (ERR_GET_LIB(err) == ERR_LIB_EC
-        && ERR_GET_REASON(err) == EC_R_UNKNOWN_GROUP) {
+        && (ERR_GET_REASON(err) == EC_R_UNKNOWN_GROUP
+            || ERR_GET_REASON(err) == EC_R_INVALID_CURVE)) {
         ERR_clear_error();
         return 1;
     }
