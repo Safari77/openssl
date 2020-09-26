@@ -19,9 +19,6 @@
 #include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
 
-DEFINE_STACK_OF(X509)
-DEFINE_STACK_OF_STRING()
-
 static int save_certs(char *signerfile, STACK_OF(X509) *signers);
 static int smime_cb(int ok, X509_STORE_CTX *ctx);
 
@@ -474,7 +471,7 @@ int smime_main(int argc, char **argv)
     }
 
     if (keyfile != NULL) {
-        key = load_key(keyfile, keyform, 0, passin, e, "signing key file");
+        key = load_key(keyfile, keyform, 0, passin, e, "signing key");
         if (key == NULL)
             goto end;
 
@@ -576,7 +573,7 @@ int smime_main(int argc, char **argv)
                                "signer certificate");
             if (signer == NULL)
                 goto end;
-            key = load_key(keyfile, keyform, 0, passin, e, "signing key file");
+            key = load_key(keyfile, keyform, 0, passin, e, "signing key");
             if (key == NULL)
                 goto end;
 

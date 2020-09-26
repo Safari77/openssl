@@ -20,12 +20,6 @@
 #include <openssl/pkcs12.h>
 #include <openssl/provider.h>
 
-DEFINE_STACK_OF(X509)
-DEFINE_STACK_OF(PKCS7)
-DEFINE_STACK_OF(PKCS12_SAFEBAG)
-DEFINE_STACK_OF(X509_ATTRIBUTE)
-DEFINE_STACK_OF_STRING()
-
 #define NOKEYS          0x1
 #define NOCERTS         0x2
 #define INFO            0x4
@@ -541,13 +535,15 @@ int pkcs12_main(int argc, char **argv)
             X509_STORE_free(store);
 
             if (vret == X509_V_OK) {
+                int add_certs;
                 /* Remove from chain2 the first (end entity) certificate */
                 X509_free(sk_X509_shift(chain2));
                 /* Add the remaining certs (except for duplicates) */
-                if (!X509_add_certs(certs, chain2, X509_ADD_FLAG_UP_REF
-                                    | X509_ADD_FLAG_NO_DUP))
-                    goto export_end;
+                add_certs = X509_add_certs(certs, chain2, X509_ADD_FLAG_UP_REF
+                                           | X509_ADD_FLAG_NO_DUP);
                 sk_X509_pop_free(chain2, X509_free);
+                if (!add_certs)
+                    goto export_end;
             } else {
                 if (vret != X509_V_ERR_UNSPECIFIED)
                     BIO_printf(bio_err, "Error getting chain: %s\n",

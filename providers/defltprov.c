@@ -41,6 +41,7 @@ static const OSSL_PARAM deflt_param_types[] = {
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_NAME, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_VERSION, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_BUILDINFO, OSSL_PARAM_UTF8_PTR, NULL, 0),
+    OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_INTEGER, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -63,7 +64,7 @@ static int deflt_get_params(void *provctx, OSSL_PARAM params[])
     if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, OPENSSL_FULL_VERSION_STR))
         return 0;
     p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_STATUS);
-    if (p != NULL && !OSSL_PARAM_set_uint(p, 1))
+    if (p != NULL && !OSSL_PARAM_set_int(p, ossl_prov_is_running()))
         return 0;
     return 1;
 }
@@ -363,6 +364,9 @@ static const OSSL_ALGORITHM deflt_signature[] = {
     { "ED25519:Ed25519", "provider=default", ed25519_signature_functions },
     { "ED448:Ed448", "provider=default", ed448_signature_functions },
     { "ECDSA", "provider=default", ecdsa_signature_functions },
+# ifndef OPENSSL_NO_SM2
+    { "SM2", "provider=default", sm2_signature_functions },
+# endif
 #endif
     { "HMAC", "provider=default", mac_legacy_hmac_signature_functions },
     { "SIPHASH", "provider=default", mac_legacy_siphash_signature_functions },
@@ -377,6 +381,14 @@ static const OSSL_ALGORITHM deflt_signature[] = {
 
 static const OSSL_ALGORITHM deflt_asym_cipher[] = {
     { "RSA:rsaEncryption", "provider=default", rsa_asym_cipher_functions },
+#ifndef OPENSSL_NO_SM2
+    { "SM2", "provider=default", sm2_asym_cipher_functions },
+#endif
+    { NULL, NULL, NULL }
+};
+
+static const OSSL_ALGORITHM deflt_asym_kem[] = {
+    { "RSA", "provider=default", rsa_asym_kem_functions },
     { NULL, NULL, NULL }
 };
 
@@ -408,13 +420,16 @@ static const OSSL_ALGORITHM deflt_keymgmt[] = {
 #ifndef OPENSSL_NO_CMAC
     { "CMAC", "provider=default", cmac_legacy_keymgmt_functions },
 #endif
+#ifndef OPENSSL_NO_SM2
+    { "SM2", "provider=default", sm2_keymgmt_functions },
+#endif
     { NULL, NULL, NULL }
 };
 
 static const OSSL_ALGORITHM deflt_encoder[] = {
-#define ENCODER(name, _fips, _format, _type, func_table)                    \
+#define ENCODER(name, _fips, _output, func_table)                           \
     { name,                                                                 \
-      "provider=default,fips=" _fips ",format=" _format ",type=" _type,     \
+      "provider=default,fips=" _fips ",output=" _output,                    \
       (func_table) }
 
 #include "encoders.inc"
@@ -434,8 +449,8 @@ static const OSSL_ALGORITHM deflt_decoder[] = {
 #undef DECODER
 
 static const OSSL_ALGORITHM deflt_store[] = {
-#define STORE(name, fips, func_table)                           \
-    { name, "provider=default,fips=" fips, (func_table) },
+#define STORE(name, _fips, func_table)                           \
+    { name, "provider=default,fips=" _fips, (func_table) },
 
 #include "stores.inc"
     { NULL, NULL, NULL }
@@ -466,6 +481,8 @@ static const OSSL_ALGORITHM *deflt_query(void *provctx, int operation_id,
         return deflt_signature;
     case OSSL_OP_ASYM_CIPHER:
         return deflt_asym_cipher;
+    case OSSL_OP_KEM:
+        return deflt_asym_kem;
     case OSSL_OP_ENCODER:
         return deflt_encoder;
     case OSSL_OP_DECODER:

@@ -23,8 +23,6 @@
 #include "cms_local.h"
 #include "crypto/asn1.h"
 
-DEFINE_STACK_OF(CMS_RecipientEncryptedKey)
-
 /* Key Agreement Recipient Info (KARI) routines */
 
 int CMS_RecipientInfo_kari_get0_alg(CMS_RecipientInfo *ri,
@@ -291,7 +289,7 @@ int CMS_RecipientInfo_kari_decrypt(CMS_ContentInfo *cms,
     /* Attempt to decrypt CEK */
     if (!cms_kek_cipher(&cek, &ceklen, enckey, enckeylen, ri->d.kari, 0))
         goto err;
-    ec = cms->d.envelopedData->encryptedContentInfo;
+    ec = cms_get0_env_enc_content(cms);
     OPENSSL_clear_free(ec->key, ec->keylen);
     ec->key = cek;
     ec->keylen = ceklen;
@@ -533,7 +531,7 @@ int cms_RecipientInfo_kari_encrypt(const CMS_ContentInfo *cms,
     }
     kari = ri->d.kari;
     reks = kari->recipientEncryptedKeys;
-    ec = cms->d.envelopedData->encryptedContentInfo;
+    ec = cms_get0_env_enc_content(cms);
     /* Initialise wrap algorithm parameters */
     if (!cms_wrap_init(kari, ec->cipher))
         return 0;

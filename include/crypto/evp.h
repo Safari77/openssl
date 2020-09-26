@@ -50,6 +50,10 @@ struct evp_pkey_ctx_st {
             EVP_ASYM_CIPHER *cipher;
             void *ciphprovctx;
         } ciph;
+        struct {
+            EVP_KEM *kem;
+            void *kemprovctx;
+        } encap;
     } op;
 
     /*
@@ -91,6 +95,13 @@ struct evp_pkey_ctx_st {
     void *data;
     /* Indicator if digest_custom needs to be called */
     unsigned int flag_call_digest_custom:1;
+    /*
+     * Used to support taking custody of memory in the case of a provider being
+     * used with the deprecated EVP_PKEY_CTX_set_rsa_keygen_pubexp() API. This
+     * member should NOT be used for any other purpose and should be removed
+     * when said deprecated API is excised completely.
+     */
+    BIGNUM *rsa_pubexp;
 } /* EVP_PKEY_CTX */ ;
 
 #define EVP_PKEY_FLAG_DYNAMIC   1
@@ -152,7 +163,6 @@ const EVP_PKEY_METHOD *dh_pkey_method(void);
 const EVP_PKEY_METHOD *dhx_pkey_method(void);
 const EVP_PKEY_METHOD *dsa_pkey_method(void);
 const EVP_PKEY_METHOD *ec_pkey_method(void);
-const EVP_PKEY_METHOD *sm2_pkey_method(void);
 const EVP_PKEY_METHOD *ecx25519_pkey_method(void);
 const EVP_PKEY_METHOD *ecx448_pkey_method(void);
 const EVP_PKEY_METHOD *ed25519_pkey_method(void);
@@ -511,6 +521,18 @@ const EVP_CIPHER *EVP_##cname##_ecb(void) { return &cname##_ecb; }
                              (fl)|EVP_CIPH_FLAG_DEFAULT_ASN1, \
                              cipher##_init_key, NULL, NULL, NULL, NULL)
 
+typedef struct {
+    unsigned char iv[EVP_MAX_IV_LENGTH];
+    unsigned int iv_len;
+    unsigned int tag_len;
+} evp_cipher_aead_asn1_params;
+
+int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
+                                evp_cipher_aead_asn1_params *params);
+
+int evp_cipher_asn1_to_param_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
+                                evp_cipher_aead_asn1_params *params);
+
 /*
  * An EVP_PKEY can have the following states:
  *
@@ -579,6 +601,7 @@ struct evp_pkey_st {
 # endif
 
     /* == Common attributes == */
+    /* If these are modified, so must evp_pkey_downgrade() */
     CRYPTO_REF_COUNT references;
     CRYPTO_RWLOCK *lock;
     STACK_OF(X509_ATTRIBUTE) *attributes; /* [ 0 ] */
@@ -652,6 +675,10 @@ struct evp_pkey_st {
     ((ctx)->operation == EVP_PKEY_OP_PARAMGEN \
      || (ctx)->operation == EVP_PKEY_OP_KEYGEN)
 
+#define EVP_PKEY_CTX_IS_KEM_OP(ctx) \
+    ((ctx)->operation == EVP_PKEY_OP_ENCAPSULATE \
+     || (ctx)->operation == EVP_PKEY_OP_DECAPSULATE)
+
 void openssl_add_all_ciphers_int(void);
 void openssl_add_all_digests_int(void);
 void evp_cleanup_int(void);
@@ -660,6 +687,7 @@ void *evp_pkey_export_to_provider(EVP_PKEY *pk, OPENSSL_CTX *libctx,
                                   EVP_KEYMGMT **keymgmt,
                                   const char *propquery);
 #ifndef FIPS_MODULE
+int evp_pkey_copy_downgraded(EVP_PKEY **dest, const EVP_PKEY *src);
 int evp_pkey_downgrade(EVP_PKEY *pk);
 void evp_pkey_free_legacy(EVP_PKEY *x);
 #endif
@@ -682,6 +710,8 @@ int evp_keymgmt_util_assign_pkey(EVP_PKEY *pkey, EVP_KEYMGMT *keymgmt,
                                  void *keydata);
 EVP_PKEY *evp_keymgmt_util_make_pkey(EVP_KEYMGMT *keymgmt, void *keydata);
 
+int evp_keymgmt_util_export(const EVP_PKEY *pk, int selection,
+                            OSSL_CALLBACK *export_cb, void *export_cbarg);
 void *evp_keymgmt_util_export_to_provider(EVP_PKEY *pk, EVP_KEYMGMT *keymgmt);
 size_t evp_keymgmt_util_find_operation_cache_index(EVP_PKEY *pk,
                                                    EVP_KEYMGMT *keymgmt);
@@ -794,3 +824,5 @@ int evp_pkey_ctx_use_cached_data(EVP_PKEY_CTX *ctx);
 void evp_method_store_flush(OPENSSL_CTX *libctx);
 int evp_set_default_properties_int(OPENSSL_CTX *libctx, const char *propq,
                                    int loadconfig);
+
+void evp_md_ctx_clear_digest(EVP_MD_CTX *ctx, int force);

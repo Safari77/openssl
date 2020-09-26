@@ -38,6 +38,7 @@ static const OSSL_PARAM base_param_types[] = {
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_NAME, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_VERSION, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_BUILDINFO, OSSL_PARAM_UTF8_PTR, NULL, 0),
+    OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_INTEGER, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -60,14 +61,17 @@ static int base_get_params(void *provctx, OSSL_PARAM params[])
     p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_BUILDINFO);
     if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, OPENSSL_FULL_VERSION_STR))
         return 0;
+    p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_STATUS);
+    if (p != NULL && !OSSL_PARAM_set_int(p, ossl_prov_is_running()))
+        return 0;
 
     return 1;
 }
 
 static const OSSL_ALGORITHM base_encoder[] = {
-#define ENCODER(name, _fips, _format, _type, func_table)                    \
+#define ENCODER(name, _fips, _output, func_table)                           \
     { name,                                                                 \
-      "provider=base,fips=" _fips ",format=" _format ",type=" _type,        \
+      "provider=base,fips=" _fips ",output=" _output,                       \
       (func_table) }
 
 #include "encoders.inc"
@@ -87,8 +91,8 @@ static const OSSL_ALGORITHM base_decoder[] = {
 #undef DECODER
 
 static const OSSL_ALGORITHM base_store[] = {
-#define STORE(name, fips, func_table)                           \
-    { name, "provider=base,fips=" fips, (func_table) },
+#define STORE(name, _fips, func_table)                           \
+    { name, "provider=base,fips=" _fips, (func_table) },
 
 #include "stores.inc"
     { NULL, NULL, NULL }

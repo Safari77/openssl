@@ -59,12 +59,6 @@ typedef unsigned int u_int;
 # endif
 #endif
 
-DEFINE_STACK_OF(X509)
-DEFINE_STACK_OF(X509_CRL)
-DEFINE_STACK_OF(X509_NAME)
-DEFINE_STACK_OF(SCT)
-DEFINE_STACK_OF_STRING()
-
 #undef BUFSIZZ
 #define BUFSIZZ 1024*8
 #define S_CLIENT_IRC_READ_TIMEOUT 8
@@ -1734,13 +1728,13 @@ int s_client_main(int argc, char **argv)
 
     if (key_file != NULL) {
         key = load_key(key_file, key_format, 0, pass, e,
-                       "client certificate private key file");
+                       "client certificate private key");
         if (key == NULL)
             goto end;
     }
 
     if (cert_file != NULL) {
-        cert = load_cert_pass(cert_file, cert_format, pass, "client certificate file");
+        cert = load_cert_pass(cert_file, cert_format, pass, "client certificate");
         if (cert == NULL)
             goto end;
     }

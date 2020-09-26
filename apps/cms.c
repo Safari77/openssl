@@ -23,12 +23,6 @@
 # include <openssl/x509v3.h>
 # include <openssl/cms.h>
 
-DEFINE_STACK_OF(X509)
-DEFINE_STACK_OF(CMS_SignerInfo)
-DEFINE_STACK_OF(GENERAL_NAME)
-DEFINE_STACK_OF(GENERAL_NAMES)
-DEFINE_STACK_OF_STRING()
-
 static int save_certs(char *signerfile, STACK_OF(X509) *signers);
 static int cms_cb(int ok, X509_STORE_CTX *ctx);
 static void receipt_request_print(CMS_ContentInfo *cms);
@@ -863,7 +857,7 @@ int cms_main(int argc, char **argv)
     }
 
     if (keyfile != NULL) {
-        key = load_key(keyfile, keyform, 0, passin, e, "signing key file");
+        key = load_key(keyfile, keyform, 0, passin, e, "signing key");
         if (key == NULL)
             goto end;
 
@@ -1066,7 +1060,7 @@ int cms_main(int argc, char **argv)
                 ret = 2;
                 goto end;
             }
-            key = load_key(keyfile, keyform, 0, passin, e, "signing key file");
+            key = load_key(keyfile, keyform, 0, passin, e, "signing key");
             if (key == NULL) {
                 ret = 2;
                 goto end;

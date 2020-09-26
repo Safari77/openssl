@@ -56,6 +56,7 @@
 #include "internal/numbers.h"
 #include "crypto/evp.h"
 #include "prov/provider_ctx.h"
+#include "prov/providercommon.h"
 #include "prov/providercommonerr.h"
 #include "prov/implementations.h"
 #include "prov/provider_util.h"
@@ -98,6 +99,9 @@ static void *kdf_tls1_prf_new(void *provctx)
 {
     TLS1_PRF *ctx;
 
+    if (!ossl_prov_is_running())
+        return NULL;
+
     if ((ctx = OPENSSL_zalloc(sizeof(*ctx))) == NULL)
         ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
     ctx->provctx = provctx;
@@ -132,6 +136,9 @@ static int kdf_tls1_prf_derive(void *vctx, unsigned char *key,
 {
     TLS1_PRF *ctx = (TLS1_PRF *)vctx;
 
+    if (!ossl_prov_is_running())
+        return 0;
+
     if (ctx->P_hash == NULL) {
         ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_MESSAGE_DIGEST);
         return 0;
@@ -142,6 +149,10 @@ static int kdf_tls1_prf_derive(void *vctx, unsigned char *key,
     }
     if (ctx->seedlen == 0) {
         ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_SEED);
+        return 0;
+    }
+    if (keylen == 0) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY_LENGTH);
         return 0;
     }
 

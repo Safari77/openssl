@@ -181,7 +181,8 @@ static int alg##_##kbits##_##lcmode##_get_params(OSSL_PARAM params[])          \
 static OSSL_FUNC_cipher_newctx_fn alg##_##kbits##_##lcmode##_newctx;             \
 static void * alg##_##kbits##_##lcmode##_newctx(void *provctx)                 \
 {                                                                              \
-     PROV_##UCALG##_CTX *ctx = OPENSSL_zalloc(sizeof(*ctx));                   \
+     PROV_##UCALG##_CTX *ctx = ossl_prov_is_running() ? OPENSSL_zalloc(sizeof(*ctx))\
+                                                     : NULL;                   \
      if (ctx != NULL) {                                                        \
          cipher_generic_initkey(ctx, kbits, blkbits, ivbits,                   \
                                 EVP_CIPH_##UCMODE##_MODE, flags,               \
@@ -320,7 +321,7 @@ static const OSSL_PARAM name##_known_gettable_ctx_params[] = {                 \
 #define CIPHER_DEFAULT_GETTABLE_CTX_PARAMS_END(name)                           \
     OSSL_PARAM_END                                                             \
 };                                                                             \
-const OSSL_PARAM * name##_gettable_ctx_params(void *provctx)                   \
+const OSSL_PARAM * name##_gettable_ctx_params(ossl_unused void *provctx)       \
 {                                                                              \
     return name##_known_gettable_ctx_params;                                   \
 }
@@ -332,7 +333,7 @@ static const OSSL_PARAM name##_known_settable_ctx_params[] = {                 \
 #define CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_END(name)                           \
     OSSL_PARAM_END                                                             \
 };                                                                             \
-const OSSL_PARAM * name##_settable_ctx_params(void *provctx)                   \
+const OSSL_PARAM * name##_settable_ctx_params(ossl_unused void *provctx)       \
 {                                                                              \
     return name##_known_settable_ctx_params;                                   \
 }

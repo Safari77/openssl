@@ -11,8 +11,6 @@
 
 #include "cmp_testlib.h"
 
-DEFINE_STACK_OF(OSSL_CMP_CERTRESPONSE)
-
 static const char *newkey_f;
 static const char *server_cert_f;
 static const char *pkcs10_f;
@@ -86,6 +84,7 @@ static X509 *cert = NULL;
             TEST_ptr_null(msg = (expr)); \
  \
         OSSL_CMP_MSG_free(msg); \
+        ERR_print_errors_fp(stderr); \
         return good; \
     } while (0)
 

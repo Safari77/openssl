@@ -21,6 +21,7 @@
 #include <openssl/err.h>
 #include <openssl/engine.h>
 #include <openssl/self_test.h>
+#include "prov/providercommon.h"
 #include "crypto/bn.h"
 
 static int ecdsa_keygen_pairwise_test(EC_KEY *eckey, OSSL_CALLBACK *cb,
@@ -255,14 +256,16 @@ int ossl_ec_key_gen(EC_KEY *eckey)
  *                   fails then the keypair is not generated,
  * Returns 1 if the keypair was generated or 0 otherwise.
  */
-int ec_generate_key(OPENSSL_CTX *libctx, EC_KEY *eckey, int pairwise_test)
+static int ec_generate_key(EC_KEY *eckey, int pairwise_test)
 {
     int ok = 0;
     BIGNUM *priv_key = NULL;
-    const BIGNUM *order = NULL;
+    const BIGNUM *tmp = NULL;
+    BIGNUM *order = NULL;
     EC_POINT *pub_key = NULL;
     const EC_GROUP *group = eckey->group;
     BN_CTX *ctx = BN_CTX_secure_new_ex(eckey->libctx);
+    int sm2 = EC_KEY_get_flags(eckey) & EC_FLAG_SM2_RANGE ? 1 : 0;
 
     if (ctx == NULL)
         goto err;
@@ -280,8 +283,8 @@ int ec_generate_key(OPENSSL_CTX *libctx, EC_KEY *eckey, int pairwise_test)
      * stated in the security policy.
      */
 
-    order = EC_GROUP_get0_order(group);
-    if (order == NULL)
+    tmp = EC_GROUP_get0_order(group);
+    if (tmp == NULL)
         goto err;
 
     /*
@@ -292,6 +295,18 @@ int ec_generate_key(OPENSSL_CTX *libctx, EC_KEY *eckey, int pairwise_test)
      * 1 + rand[0..n-2] would effect the way that tests feed dummy entropy into
      * rand so the simpler backward compatible method has been used here.
      */
+
+    /* range of SM2 private key is [1, n-1) */
+    if (sm2) {
+        order = BN_new();
+        if (order == NULL || !BN_sub(order, tmp, BN_value_one()))
+            goto err;
+    } else {
+        order = BN_dup(tmp);
+        if (order == NULL)
+            goto err;
+    }
+
     do
         if (!BN_priv_rand_range_ex(priv_key, order, ctx))
             goto err;
@@ -324,12 +339,13 @@ int ec_generate_key(OPENSSL_CTX *libctx, EC_KEY *eckey, int pairwise_test)
         OSSL_CALLBACK *cb = NULL;
         void *cbarg = NULL;
 
-        OSSL_SELF_TEST_get_callback(libctx, &cb, &cbarg);
+        OSSL_SELF_TEST_get_callback(eckey->libctx, &cb, &cbarg);
         ok = ecdsa_keygen_pairwise_test(eckey, cb, cbarg);
     }
 err:
     /* Step (9): If there is an error return an invalid keypair. */
     if (!ok) {
+        ossl_set_error_state(OSSL_SELF_TEST_TYPE_PCT);
         BN_clear(eckey->priv_key);
         if (eckey->pub_key != NULL)
             EC_POINT_set_to_infinity(group, eckey->pub_key);
@@ -338,12 +354,13 @@ err:
     EC_POINT_free(pub_key);
     BN_clear_free(priv_key);
     BN_CTX_free(ctx);
+    BN_free(order);
     return ok;
 }
 
 int ec_key_simple_generate_key(EC_KEY *eckey)
 {
-    return ec_generate_key(NULL, eckey, 0);
+    return ec_generate_key(eckey, 0);
 }
 
 int ec_key_simple_generate_public_key(EC_KEY *eckey)
@@ -818,6 +835,13 @@ void EC_KEY_clear_flags(EC_KEY *key, int flags)
 {
     key->flags &= ~flags;
     key->dirty_cnt++;
+}
+
+int EC_KEY_decoded_from_explicit_params(const EC_KEY *key)
+{
+    if (key == NULL || key->group == NULL)
+        return -1;
+    return key->group->decoded_from_explicit_params;
 }
 
 size_t EC_KEY_key2buf(const EC_KEY *key, point_conversion_form_t form,

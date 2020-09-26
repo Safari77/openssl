@@ -22,8 +22,6 @@
 #include <openssl/x509.h>
 #include "crypto/x509.h"
 
-DEFINE_STACK_OF(X509)
-
 /* Verify a message protected by signature according to RFC section 5.1.3.3 */
 static int verify_signature(const OSSL_CMP_CTX *cmp_ctx,
                             const OSSL_CMP_MSG *msg, X509 *cert)
@@ -568,6 +566,10 @@ int OSSL_CMP_validate_msg(OSSL_CMP_CTX *ctx, const OSSL_CMP_MSG *msg)
     switch (ossl_cmp_hdr_get_protection_nid(msg->header)) {
         /* 5.1.3.1.  Shared Secret Information */
     case NID_id_PasswordBasedMAC:
+        if (ctx->secretValue == NULL) {
+            ossl_cmp_warn(ctx, "no secret available for verifying PBM-based CMP message protection");
+            return 1;
+        }
         if (verify_PBMAC(ctx, msg)) {
             /*
              * RFC 4210, 5.3.2: 'Note that if the PKI Message Protection is
@@ -615,6 +617,10 @@ int OSSL_CMP_validate_msg(OSSL_CMP_CTX *ctx, const OSSL_CMP_MSG *msg)
     default:
         scrt = ctx->srvCert;
         if (scrt == NULL) {
+            if (ctx->trusted == NULL) {
+                ossl_cmp_warn(ctx, "no trust store nor pinned server cert available for verifying signature-based CMP message protection");
+                return 1;
+            }
             if (check_msg_find_cert(ctx, msg))
                 return 1;
         } else { /* use pinned sender cert */

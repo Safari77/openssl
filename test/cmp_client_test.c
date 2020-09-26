@@ -15,9 +15,6 @@
 
 #ifndef NDEBUG /* tests need mock server, which is available only if !NDEBUG */
 
-DEFINE_STACK_OF(X509)
-DEFINE_STACK_OF(OSSL_CMP_ITAV)
-
 static const char *server_key_f;
 static const char *server_cert_f;
 static const char *client_key_f;
@@ -350,7 +347,7 @@ void cleanup_tests(void)
     return;
 }
 
-#define USAGE "server.key server.crt client.key client.crt client.csr module_name [module_conf_file]\n"
+# define USAGE "server.key server.crt client.key client.crt client.csr module_name [module_conf_file]\n"
 OPT_TEST_DECLARE_USAGE(USAGE)
 
 int setup_tests(void)

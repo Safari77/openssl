@@ -21,13 +21,12 @@
 #include <openssl/kdf.h>
 #include <openssl/params.h>
 #include <openssl/core_names.h>
+#include <openssl/fips_names.h>
 #include "internal/numbers.h"
 #include "internal/nelem.h"
 #include "crypto/evp.h"
 #include "testutil.h"
 #include "evp_test.h"
-
-DEFINE_STACK_OF_STRING()
 
 #define AAD_NUM 4
 
@@ -1629,8 +1628,11 @@ static int pderive_test_parse(EVP_TEST *t,
         EVP_PKEY *peer;
         if (find_key(&peer, value, public_keys) == 0)
             return -1;
-        if (EVP_PKEY_derive_set_peer(kdata->ctx, peer) <= 0)
-            return -1;
+        if (EVP_PKEY_derive_set_peer(kdata->ctx, peer) <= 0) {
+            t->err = "DERIVE_SET_PEER_ERROR";
+            return 1;
+        }
+        t->err = NULL;
         return 1;
     }
     if (strcmp(keyword, "SharedSecret") == 0)
@@ -3256,8 +3258,7 @@ static int key_unsupported(void)
     long err = ERR_peek_last_error();
 
     if (ERR_GET_LIB(err) == ERR_LIB_EVP
-            && (ERR_GET_REASON(err) == EVP_R_UNSUPPORTED_ALGORITHM
-                || ERR_GET_REASON(err) == EVP_R_FETCH_FAILED)) {
+            && (ERR_GET_REASON(err) == EVP_R_UNSUPPORTED_ALGORITHM)) {
         ERR_clear_error();
         return 1;
     }
@@ -3284,6 +3285,33 @@ static char *take_value(PAIR *pp)
 
     pp->value = NULL;
     return p;
+}
+
+static int securitycheck_enabled(void)
+{
+    static int enabled = -1;
+
+    if (enabled == -1) {
+        if (OSSL_PROVIDER_available(libctx, "fips")) {
+            OSSL_PARAM params[2];
+            OSSL_PROVIDER *prov = NULL;
+            int check = 1;
+
+            prov = OSSL_PROVIDER_load(libctx, "fips");
+            if (prov != NULL) {
+                params[0] =
+                    OSSL_PARAM_construct_int(OSSL_PROV_PARAM_SECURITY_CHECKS,
+                                             &check);
+                params[1] = OSSL_PARAM_construct_end();
+                OSSL_PROVIDER_get_params(prov, params);
+                OSSL_PROVIDER_unload(prov);
+            }
+            enabled = check;
+            return enabled;
+        }
+        enabled = 0;
+    }
+    return enabled;
 }
 
 /*
@@ -3443,7 +3471,18 @@ start:
     }
 
     for (pp++, i = 1; i < (t->s.numpairs - skip_availablein); pp++, i++) {
-        if (strcmp(pp->key, "Availablein") == 0) {
+        if (strcmp(pp->key, "Securitycheck") == 0) {
+#if defined(OPENSSL_NO_FIPS_SECURITYCHECKS)
+#else
+            if (!securitycheck_enabled())
+#endif
+            {
+                TEST_info("skipping, Securitycheck is disabled: %s:%d",
+                          t->s.test_file, t->s.start);
+                t->skip = 1;
+                return 0;
+            }
+        } else if (strcmp(pp->key, "Availablein") == 0) {
             TEST_info("Line %d: 'Availablein' should be the first option",
                       t->s.curr);
             return 0;

@@ -23,6 +23,26 @@ OpenSSL 3.0
 
 ### Changes between 1.1.1 and 3.0 [xx XXX xxxx]
 
+ * Deprecated EVP_PKEY_set_alias_type().  This function was previously
+   needed as a workaround to recognise SM2 keys.  With OpenSSL 3.0, this key
+   type is internally recognised so the workaround is no longer needed.
+
+   Functionality is still retained as it is, but will only work with
+   EVP_PKEYs with a legacy internal key.
+
+   *Richard Levitte*
+
+ * Deprecated EVP_PKEY_CTX_set_rsa_keygen_pubexp() & introduced
+   EVP_PKEY_CTX_set1_rsa_keygen_pubexp(), which is now preferred.
+
+   *Jeremy Walch*
+
+ * Changed all "STACK" functions to be macros instead of inline functions. Macro
+   parameters are still checked for type safety at compile time via helper
+   inline functions.
+
+   *Matt Caswell*
+
  * Remove the RAND_DRBG API
 
    The RAND_DRBG API did not fit well into the new provider concept as
@@ -353,8 +373,8 @@ OpenSSL 3.0
    *Paul Dale*
 
  * The command line utilities genrsa and rsa have been modified to use PKEY
-   APIs  These commands are now in maintenance mode and no new features will
-   be added to them.
+   APIs. They now write PKCS#8 keys by default. These commands are now in
+   maintenance mode and no new features will be added to them.
 
    *Paul Dale*
 
@@ -607,8 +627,7 @@ OpenSSL 3.0
 
    *Rich Salz*
 
- * Added documentation for the STACK API. OpenSSL only defines the STACK
-   functions where they are used.
+ * Added documentation for the STACK API.
 
    *Rich Salz*
 
@@ -1157,6 +1176,12 @@ OpenSSL 3.0
    list of built in objects, i.e. OIDs with names.
 
    *Richard Levitte*
+
+ * Added the options `-crl_lastupdate` and `-crl_nextupdate` to `openssl ca`,
+   allowing the `lastUpdate` and `nextUpdate` fields in the generated CRL to
+   be set explicitly.
+
+   *Chris Novakovic*
 
  * Added support for Linux Kernel TLS data-path. The Linux Kernel data-path
    improves application performance by removing data copies and providing

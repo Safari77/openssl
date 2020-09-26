@@ -7,12 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-/*
- * RAND_DRBG_set is deprecated for public use, but still ok for
- * internal use.
- */
-#include "internal/deprecated.h"
-
 #include <string.h>
 #include "internal/nelem.h"
 #include <openssl/crypto.h>
@@ -23,6 +17,7 @@
 #include <openssl/aes.h>
 #include "../crypto/rand/rand_local.h"
 #include "../include/crypto/rand.h"
+#include "../include/crypto/evp.h"
 #include "../providers/implementations/rands/drbg_local.h"
 #include "../crypto/evp/evp_local.h"
 
@@ -30,6 +25,11 @@
 # include <windows.h>
 #endif
 
+#if defined(__TANDEM)
+# if defined(OPENSSL_TANDEM_FLOSS)
+#  include <floss.h(floss_fork)>
+# endif
+#endif
 
 #if defined(OPENSSL_SYS_UNIX)
 # include <sys/types.h>

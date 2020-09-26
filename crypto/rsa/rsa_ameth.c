@@ -113,10 +113,8 @@ static int rsa_pub_decode(EVP_PKEY *pkey, const X509_PUBKEY *pubkey)
 
     if (!X509_PUBKEY_get0_param(NULL, &p, &pklen, &alg, pubkey))
         return 0;
-    if ((rsa = d2i_RSAPublicKey(NULL, &p, pklen)) == NULL) {
-        RSAerr(RSA_F_RSA_PUB_DECODE, ERR_R_RSA_LIB);
+    if ((rsa = d2i_RSAPublicKey(NULL, &p, pklen)) == NULL)
         return 0;
-    }
     if (!rsa_param_decode(rsa, alg)) {
         RSA_free(rsa);
         return 0;
@@ -144,6 +142,15 @@ static int rsa_pub_decode(EVP_PKEY *pkey, const X509_PUBKEY *pubkey)
 
 static int rsa_pub_cmp(const EVP_PKEY *a, const EVP_PKEY *b)
 {
+    /*
+     * Don't check the public/private key, this is mostly for smart
+     * cards.
+     */
+    if (((RSA_flags(a->pkey.rsa) & RSA_METHOD_FLAG_NO_CHECK))
+            || (RSA_flags(b->pkey.rsa) & RSA_METHOD_FLAG_NO_CHECK)) {
+        return 1;
+    }
+
     if (BN_cmp(b->pkey.rsa->n, a->pkey.rsa->n) != 0
         || BN_cmp(b->pkey.rsa->e, a->pkey.rsa->e) != 0)
         return 0;
@@ -155,10 +162,8 @@ static int old_rsa_priv_decode(EVP_PKEY *pkey,
 {
     RSA *rsa;
 
-    if ((rsa = d2i_RSAPrivateKey(NULL, pder, derlen)) == NULL) {
-        RSAerr(RSA_F_OLD_RSA_PRIV_DECODE, ERR_R_RSA_LIB);
+    if ((rsa = d2i_RSAPrivateKey(NULL, pder, derlen)) == NULL)
         return 0;
-    }
     EVP_PKEY_assign(pkey, pkey->ameth->pkey_id, rsa);
     return 1;
 }
@@ -1230,7 +1235,7 @@ static int rsa_int_export_to(const EVP_PKEY *from, int rsa_type,
             || !rsa_pss_params_30_set_hashalg(&pss_params, md_nid)
             || !rsa_pss_params_30_set_maskgenhashalg(&pss_params, mgf1md_nid)
             || !rsa_pss_params_30_set_saltlen(&pss_params, saltlen)
-            || !rsa_pss_params_30_todata(&pss_params, propq, tmpl, NULL))
+            || !rsa_pss_params_30_todata(&pss_params, tmpl, NULL))
             goto err;
         selection |= OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS;
     }

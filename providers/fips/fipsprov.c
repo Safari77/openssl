@@ -37,6 +37,7 @@ static OSSL_FUNC_provider_query_operation_fn fips_query;
 #define ALG(NAMES, FUNC) ALGC(NAMES, FUNC, NULL)
 
 extern OSSL_FUNC_core_thread_start_fn *c_thread_start;
+int FIPS_security_check_enabled(void);
 
 /*
  * TODO(3.0): Should these be stored in the provider side provctx? Could they
@@ -46,6 +47,8 @@ extern OSSL_FUNC_core_thread_start_fn *c_thread_start;
  */
 
 static SELF_TEST_POST_PARAMS selftest_params;
+static int fips_security_checks = 1;
+static const char *fips_security_check_option = "1";
 
 /* Functions provided by the core */
 static OSSL_FUNC_core_gettable_params_fn *c_gettable_params;
@@ -99,7 +102,8 @@ static const OSSL_PARAM fips_param_types[] = {
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_NAME, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_VERSION, OSSL_PARAM_UTF8_PTR, NULL, 0),
     OSSL_PARAM_DEFN(OSSL_PROV_PARAM_BUILDINFO, OSSL_PARAM_UTF8_PTR, NULL, 0),
-    OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_UNSIGNED_INTEGER, NULL, 0),
+    OSSL_PARAM_DEFN(OSSL_PROV_PARAM_STATUS, OSSL_PARAM_INTEGER, NULL, 0),
+    OSSL_PARAM_DEFN(OSSL_PROV_PARAM_SECURITY_CHECKS, OSSL_PARAM_INTEGER, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -108,6 +112,7 @@ static const OSSL_PARAM fips_param_types[] = {
  * NOTE: inside core_get_params() these will be loaded from config items
  * stored inside prov->parameters (except for
  * OSSL_PROV_PARAM_CORE_MODULE_FILENAME).
+ * OSSL_PROV_FIPS_PARAM_SECURITY_CHECKS is not a self test parameter.
  */
 static OSSL_PARAM core_params[] =
 {
@@ -126,6 +131,12 @@ static OSSL_PARAM core_params[] =
     OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_INSTALL_VERSION,
                         selftest_params.indicator_version,
                         sizeof(selftest_params.indicator_version)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_CONDITIONAL_ERRORS,
+                        selftest_params.conditional_error_check,
+                        sizeof(selftest_params.conditional_error_check)),
+    OSSL_PARAM_utf8_ptr(OSSL_PROV_FIPS_PARAM_SECURITY_CHECKS,
+                        fips_security_check_option,
+                        sizeof(fips_security_check_option)),
     OSSL_PARAM_END
 };
 
@@ -148,7 +159,10 @@ static int fips_get_params(void *provctx, OSSL_PARAM params[])
     if (p != NULL && !OSSL_PARAM_set_utf8_ptr(p, OPENSSL_FULL_VERSION_STR))
         return 0;
     p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_STATUS);
-    if (p != NULL && !OSSL_PARAM_set_uint(p, FIPS_is_running()))
+    if (p != NULL && !OSSL_PARAM_set_int(p, ossl_prov_is_running()))
+        return 0;
+    p = OSSL_PARAM_locate(params, OSSL_PROV_PARAM_SECURITY_CHECKS);
+    if (p != NULL && !OSSL_PARAM_set_int(p, fips_security_checks))
         return 0;
     return 1;
 }
@@ -448,6 +462,11 @@ static const OSSL_ALGORITHM fips_asym_cipher[] = {
     { NULL, NULL, NULL }
 };
 
+static const OSSL_ALGORITHM fips_asym_kem[] = {
+    { "RSA", FIPS_DEFAULT_PROPERTIES, rsa_asym_kem_functions },
+    { NULL, NULL, NULL }
+};
+
 static const OSSL_ALGORITHM fips_keymgmt[] = {
 #ifndef OPENSSL_NO_DH
     { "DH:dhKeyAgreement", FIPS_DEFAULT_PROPERTIES, dh_keymgmt_functions },
@@ -480,7 +499,7 @@ static const OSSL_ALGORITHM *fips_query(void *provctx, int operation_id,
 {
     *no_cache = 0;
 
-    if (!FIPS_is_running())
+    if (!ossl_prov_is_running())
         return NULL;
 
     switch (operation_id) {
@@ -503,6 +522,8 @@ static const OSSL_ALGORITHM *fips_query(void *provctx, int operation_id,
         return fips_signature;
     case OSSL_OP_ASYM_CIPHER:
         return fips_asym_cipher;
+    case OSSL_OP_KEM:
+        return fips_asym_kem;
     }
     return NULL;
 }
@@ -645,6 +666,15 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
         ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
         return 0;
     }
+    /* Disable the conditional error check if is disabled in the fips config file*/
+    if (selftest_params.conditional_error_check != NULL
+        && strcmp(selftest_params.conditional_error_check, "0") == 0)
+        SELF_TEST_disable_conditional_error_state();
+
+    /* Disable the security check if is disabled in the fips config file*/
+    if (fips_security_check_option != NULL
+        && strcmp(fips_security_check_option, "0") == 0)
+        fips_security_checks = 0;
 
     /*  Create a context. */
     if ((*provctx = PROV_CTX_new()) == NULL
@@ -850,4 +880,26 @@ int BIO_snprintf(char *buf, size_t n, const char *format, ...)
     ret = c_BIO_vsnprintf(buf, n, format, args);
     va_end(args);
     return ret;
+}
+
+int FIPS_security_check_enabled(void)
+{
+    return fips_security_checks;
+}
+
+void OSSL_SELF_TEST_get_callback(OPENSSL_CTX *libctx, OSSL_CALLBACK **cb,
+                                 void **cbarg)
+{
+    if (libctx == NULL)
+        libctx = selftest_params.libctx;
+
+    if (c_stcbfn != NULL && c_get_libctx != NULL) {
+        /* Get the parent libctx */
+        c_stcbfn(c_get_libctx(FIPS_get_core_handle(libctx)), cb, cbarg);
+    } else {
+        if (cb != NULL)
+            *cb = NULL;
+        if (cbarg != NULL)
+            *cbarg = NULL;
+    }
 }

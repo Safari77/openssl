@@ -25,6 +25,7 @@
 #include "prov/implementations.h"
 #include "prov/provider_ctx.h"
 #include "prov/provider_util.h"
+#include "prov/providercommon.h"
 
 /*
  * Forward declaration of everything implemented here.  This is not strictly
@@ -76,6 +77,9 @@ static void *hmac_new(void *provctx)
 {
     struct hmac_data_st *macctx;
 
+    if (!ossl_prov_is_running())
+        return NULL;
+
     if ((macctx = OPENSSL_zalloc(sizeof(*macctx))) == NULL
         || (macctx->ctx = HMAC_CTX_new()) == NULL) {
         OPENSSL_free(macctx);
@@ -102,9 +106,12 @@ static void hmac_free(void *vmacctx)
 static void *hmac_dup(void *vsrc)
 {
     struct hmac_data_st *src = vsrc;
-    struct hmac_data_st *dst = hmac_new(src->provctx);
+    struct hmac_data_st *dst;
     HMAC_CTX *ctx;
 
+    if (!ossl_prov_is_running())
+        return NULL;
+    dst = hmac_new(src->provctx);
     if (dst == NULL)
         return NULL;
 
@@ -120,7 +127,7 @@ static void *hmac_dup(void *vsrc)
     }
     if (src->key != NULL) {
         /* There is no "secure" OPENSSL_memdup */
-        dst->key = OPENSSL_secure_malloc(src->keylen);
+        dst->key = OPENSSL_secure_malloc(src->keylen > 0 ? src->keylen : 1);
         if (dst->key == NULL) {
             hmac_free(dst);
             return 0;
@@ -140,9 +147,13 @@ static size_t hmac_size(void *vmacctx)
 static int hmac_init(void *vmacctx)
 {
     struct hmac_data_st *macctx = vmacctx;
-    const EVP_MD *digest = ossl_prov_digest_md(&macctx->digest);
+    const EVP_MD *digest;
     int rv = 1;
 
+    if (!ossl_prov_is_running())
+        return 0;
+
+    digest = ossl_prov_digest_md(&macctx->digest);
     /* HMAC_Init_ex doesn't tolerate all zero params, so we must be careful */
     if (macctx->tls_data_size == 0 && digest != NULL)
         rv = HMAC_Init_ex(macctx->ctx, NULL, 0, digest,
@@ -191,6 +202,8 @@ static int hmac_final(void *vmacctx, unsigned char *out, size_t *outl,
     unsigned int hlen;
     struct hmac_data_st *macctx = vmacctx;
 
+    if (!ossl_prov_is_running())
+        return 0;
     if (macctx->tls_data_size > 0) {
         if (macctx->tls_mac_out_size == 0)
             return 0;
@@ -265,7 +278,7 @@ static int hmac_set_ctx_params(void *vmacctx, const OSSL_PARAM params[])
         if (macctx->keylen > 0)
             OPENSSL_secure_clear_free(macctx->key, macctx->keylen);
         /* Keep a copy of the key if we need it for TLS HMAC */
-        macctx->key = OPENSSL_secure_malloc(p->data_size);
+        macctx->key = OPENSSL_secure_malloc(p->data_size > 0 ? p->data_size : 1);
         if (macctx->key == NULL)
             return 0;
         memcpy(macctx->key, p->data, p->data_size);

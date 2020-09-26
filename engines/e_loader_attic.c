@@ -37,7 +37,6 @@
 
 #include "e_loader_attic_err.c"
 
-DEFINE_STACK_OF(X509)
 DEFINE_STACK_OF(OSSL_STORE_INFO)
 
 #ifdef _WIN32
@@ -1740,7 +1739,7 @@ static int loader_attic_destroy(ENGINE *e)
 static int bind_loader_attic(ENGINE *e)
 {
 
-    /* Ensure the ATTIC error handdling is set up on best effort basis */
+    /* Ensure the ATTIC error handling is set up on best effort basis */
     ERR_load_ATTIC_strings();
 
     if (/* Create the OSSL_STORE_LOADER */

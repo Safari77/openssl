@@ -41,6 +41,7 @@
 #include "prov/implementations.h"
 #include "prov/provider_ctx.h"
 #include "prov/provider_util.h"
+#include "prov/providercommon.h"
 #include "prov/providercommonerr.h"
 
 #include "e_os.h"
@@ -98,6 +99,9 @@ static uint32_t be32(uint32_t host)
 static void *kbkdf_new(void *provctx)
 {
     KBKDF *ctx;
+
+    if (!ossl_prov_is_running())
+        return NULL;
 
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx == NULL) {
@@ -192,6 +196,9 @@ static int kbkdf_derive(void *vctx, unsigned char *key, size_t keylen)
     uint32_t l = be32(keylen * 8);
     size_t h = 0;
 
+    if (!ossl_prov_is_running())
+        return 0;
+
     /* label, context, and iv are permitted to be empty.  Check everything
      * else. */
     if (ctx->ctx_init == NULL) {
@@ -202,6 +209,12 @@ static int kbkdf_derive(void *vctx, unsigned char *key, size_t keylen)
         /* Could either be missing MAC or missing message digest or missing
          * cipher - arbitrarily, I pick this one. */
         ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_MAC);
+        return 0;
+    }
+
+    /* Fail if the output length is zero */
+    if (keylen == 0) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_KEY_LENGTH);
         return 0;
     }
 

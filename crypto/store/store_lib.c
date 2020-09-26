@@ -135,9 +135,8 @@ OSSL_STORE_open_with_libctx(const char *uri,
         goto err;
     }
 
-    if ((ui_method != NULL
-         && !ossl_pw_set_ui_method(&ctx->pwdata, ui_method, ui_data))
-        || !ossl_pw_enable_passphrase_caching(&ctx->pwdata)) {
+    if (ui_method != NULL
+        && !ossl_pw_set_ui_method(&ctx->pwdata, ui_method, ui_data)) {
         ERR_raise(ERR_LIB_OSSL_STORE, ERR_R_CRYPTO_LIB);
         goto err;
     }
@@ -179,6 +178,7 @@ OSSL_STORE_open_with_libctx(const char *uri,
     }
     OSSL_STORE_LOADER_free(fetched_loader);
     OPENSSL_free(propq_copy);
+    OPENSSL_free(ctx);
     return NULL;
 }
 
@@ -270,6 +270,10 @@ int OSSL_STORE_find(OSSL_STORE_CTX *ctx, const OSSL_STORE_SEARCH *search)
 
     if (ctx->loading) {
         ERR_raise(ERR_LIB_OSSL_STORE, OSSL_STORE_R_LOADING_STARTED);
+        return 0;
+    }
+    if (search == NULL) {
+        ERR_raise(ERR_LIB_OSSL_STORE, ERR_R_PASSED_NULL_PARAMETER);
         return 0;
     }
 
@@ -421,7 +425,6 @@ OSSL_STORE_INFO *OSSL_STORE_load(OSSL_STORE_CTX *ctx)
         }
     }
 
-    ossl_pw_clear_passphrase_cache(&ctx->pwdata);
     if (v != NULL)
         OSSL_TRACE1(STORE, "Got a %s\n",
                     OSSL_STORE_INFO_type_string(OSSL_STORE_INFO_get_type(v)));
@@ -847,6 +850,7 @@ OSSL_STORE_SEARCH *OSSL_STORE_SEARCH_by_key_fingerprint(const EVP_MD *digest,
                        OSSL_STORE_R_FINGERPRINT_SIZE_DOES_NOT_MATCH_DIGEST,
                        "%s size is %d, fingerprint size is %zu",
                        EVP_MD_name(digest), EVP_MD_size(digest), len);
+        OPENSSL_free(search);
         return NULL;
     }
 
@@ -968,7 +972,11 @@ OSSL_STORE_CTX *OSSL_STORE_attach(BIO *bp, const char *scheme,
         return NULL;
     }
 
-    (void)ossl_pw_set_ui_method(&ctx->pwdata, ui_method, ui_data);
+    if (ui_method != NULL
+        && !ossl_pw_set_ui_method(&ctx->pwdata, ui_method, ui_data)) {
+        OPENSSL_free(ctx);
+        return NULL;
+    }
     ctx->fetched_loader = fetched_loader;
     ctx->loader = loader;
     ctx->loader_ctx = loader_ctx;

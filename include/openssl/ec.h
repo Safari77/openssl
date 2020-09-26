@@ -874,6 +874,7 @@ int ECPKParameters_print_fp(FILE *fp, const EC_GROUP *x, int off);
 #  define EC_FLAG_NON_FIPS_ALLOW  0x1
 #  define EC_FLAG_FIPS_CHECKED    0x2
 #  define EC_FLAG_COFACTOR_ECDH   0x1000
+#  define EC_FLAG_SM2_RANGE       0x4
 
 /**
  *  Creates a new EC_KEY object.
@@ -895,6 +896,8 @@ int EC_KEY_get_flags(const EC_KEY *key);
 void EC_KEY_set_flags(EC_KEY *key, int flags);
 
 void EC_KEY_clear_flags(EC_KEY *key, int flags);
+
+int EC_KEY_decoded_from_explicit_params(const EC_KEY *key);
 
 /**
  *  Creates a new EC_KEY object using a named curve as underlying
@@ -1470,12 +1473,7 @@ DEPRECATEDIN_3_0(void EC_KEY_METHOD_get_verify
 #  endif
 
 int EVP_PKEY_CTX_set_ec_paramgen_curve_nid(EVP_PKEY_CTX *ctx, int nid);
-
-#  define EVP_PKEY_CTX_set_ec_param_enc(ctx, flag) \
-        EVP_PKEY_CTX_ctrl(ctx, EVP_PKEY_EC, \
-                          EVP_PKEY_OP_PARAMGEN|EVP_PKEY_OP_KEYGEN, \
-                          EVP_PKEY_CTRL_EC_PARAM_ENC, flag, NULL)
-
+int EVP_PKEY_CTX_set_ec_param_enc(EVP_PKEY_CTX *ctx, int param_enc);
 int EVP_PKEY_CTX_set_ecdh_cofactor_mode(EVP_PKEY_CTX *ctx, int cofactor_mode);
 int EVP_PKEY_CTX_get_ecdh_cofactor_mode(EVP_PKEY_CTX *ctx);
 

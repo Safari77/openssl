@@ -22,24 +22,9 @@
 #include "internal/provider.h"
 #include "evp_local.h"
 
-/* This call frees resources associated with the context */
-int EVP_MD_CTX_reset(EVP_MD_CTX *ctx)
+
+void evp_md_ctx_clear_digest(EVP_MD_CTX *ctx, int force)
 {
-    if (ctx == NULL)
-        return 1;
-
-#ifndef FIPS_MODULE
-    /* TODO(3.0): Temporarily no support for EVP_DigestSign* in FIPS module */
-    /*
-     * pctx should be freed by the user of EVP_MD_CTX
-     * if EVP_MD_CTX_FLAG_KEEP_PKEY_CTX is set
-     */
-    if (!EVP_MD_CTX_test_flags(ctx, EVP_MD_CTX_FLAG_KEEP_PKEY_CTX)) {
-        EVP_PKEY_CTX_free(ctx->pctx);
-        ctx->pctx = NULL;
-    }
-#endif
-
     EVP_MD_free(ctx->fetched_digest);
     ctx->fetched_digest = NULL;
     ctx->reqdigest = NULL;
@@ -61,16 +46,36 @@ int EVP_MD_CTX_reset(EVP_MD_CTX *ctx)
         && !EVP_MD_CTX_test_flags(ctx, EVP_MD_CTX_FLAG_CLEANED))
         ctx->digest->cleanup(ctx);
     if (ctx->digest && ctx->digest->ctx_size && ctx->md_data
-        && !EVP_MD_CTX_test_flags(ctx, EVP_MD_CTX_FLAG_REUSE)) {
+            && (!EVP_MD_CTX_test_flags(ctx, EVP_MD_CTX_FLAG_REUSE) || force))
         OPENSSL_clear_free(ctx->md_data, ctx->digest->ctx_size);
-    }
+    if (force)
+        ctx->digest = NULL;
 
 #if !defined(FIPS_MODULE) && !defined(OPENSSL_NO_ENGINE)
     ENGINE_finish(ctx->engine);
+    ctx->engine = NULL;
+#endif
+}
+
+/* This call frees resources associated with the context */
+int EVP_MD_CTX_reset(EVP_MD_CTX *ctx)
+{
+    if (ctx == NULL)
+        return 1;
+
+#ifndef FIPS_MODULE
+    /* TODO(3.0): Temporarily no support for EVP_DigestSign* in FIPS module */
+    /*
+     * pctx should be freed by the user of EVP_MD_CTX
+     * if EVP_MD_CTX_FLAG_KEEP_PKEY_CTX is set
+     */
+    if (!EVP_MD_CTX_test_flags(ctx, EVP_MD_CTX_FLAG_KEEP_PKEY_CTX)) {
+        EVP_PKEY_CTX_free(ctx->pctx);
+        ctx->pctx = NULL;
+    }
 #endif
 
-    /* TODO(3.0): End of legacy code */
-
+    evp_md_ctx_clear_digest(ctx, 0);
     OPENSSL_cleanse(ctx, sizeof(*ctx));
 
     return 1;
@@ -133,6 +138,25 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
 {
 #if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
     ENGINE *tmpimpl = NULL;
+#endif
+
+#if !defined(FIPS_MODULE)
+    if (ctx->pctx != NULL
+            && EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx->pctx)
+            && ctx->pctx->op.sig.sigprovctx != NULL) {
+        /*
+         * Prior to OpenSSL 3.0 calling EVP_DigestInit_ex() on an mdctx
+         * previously initialised with EVP_DigestSignInit() would retain
+         * information about the key, and re-initialise for another sign
+         * operation. So in that case we redirect to EVP_DigestSignInit()
+         */
+        if (ctx->pctx->operation == EVP_PKEY_OP_SIGNCTX)
+            return EVP_DigestSignInit(ctx, NULL, type, impl, NULL);
+        if (ctx->pctx->operation == EVP_PKEY_OP_VERIFYCTX)
+            return EVP_DigestVerifyInit(ctx, NULL, type, impl, NULL);
+        EVPerr(0, EVP_R_UPDATE_ERROR);
+        return 0;
+    }
 #endif
 
     EVP_MD_CTX_clear_flags(ctx, EVP_MD_CTX_FLAG_CLEANED);
@@ -208,10 +232,8 @@ int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
 #else
         EVP_MD *provmd = EVP_MD_fetch(NULL, OBJ_nid2sn(type->type), "");
 
-        if (provmd == NULL) {
-            EVPerr(EVP_F_EVP_DIGESTINIT_EX, EVP_R_INITIALIZATION_ERROR);
+        if (provmd == NULL)
             return 0;
-        }
         type = provmd;
         EVP_MD_free(ctx->fetched_digest);
         ctx->fetched_digest = provmd;
