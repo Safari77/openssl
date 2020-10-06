@@ -236,7 +236,7 @@ void *ec_newdata(void *provctx)
 {
     if (!ossl_prov_is_running())
         return NULL;
-    return EC_KEY_new_with_libctx(PROV_LIBRARY_CONTEXT_OF(provctx), NULL);
+    return EC_KEY_new_ex(PROV_LIBRARY_CONTEXT_OF(provctx), NULL);
 }
 
 static
@@ -1050,7 +1050,7 @@ static void *ec_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
 
     if (!ossl_prov_is_running()
         || gctx == NULL
-        || (ec = EC_KEY_new_with_libctx(gctx->libctx, NULL)) == NULL)
+        || (ec = EC_KEY_new_ex(gctx->libctx, NULL)) == NULL)
         return NULL;
 
     if (gctx->gen_group == NULL) {
@@ -1094,7 +1094,7 @@ static void *sm2_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
     int ret = 1;
 
     if (gctx == NULL
-        || (ec = EC_KEY_new_with_libctx(gctx->libctx, NULL)) == NULL)
+        || (ec = EC_KEY_new_ex(gctx->libctx, NULL)) == NULL)
         return NULL;
 
     if (gctx->gen_group == NULL) {
@@ -1166,7 +1166,7 @@ void *ec_load(const void *reference, size_t reference_sz)
     return NULL;
 }
 
-const OSSL_DISPATCH ec_keymgmt_functions[] = {
+const OSSL_DISPATCH ossl_ec_keymgmt_functions[] = {
     { OSSL_FUNC_KEYMGMT_NEW, (void (*)(void))ec_newdata },
     { OSSL_FUNC_KEYMGMT_GEN_INIT, (void (*)(void))ec_gen_init },
     { OSSL_FUNC_KEYMGMT_GEN_SET_TEMPLATE,

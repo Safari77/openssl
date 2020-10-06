@@ -320,7 +320,7 @@ static int do_dh_print(BIO *bp, const DH *x, int indent, int ptype)
     if (!ASN1_bn_print(bp, "public-key:", pub_key, NULL, indent))
         goto err;
 
-    if (!ffc_params_print(bp, &x->params, indent))
+    if (!ossl_ffc_params_print(bp, &x->params, indent))
         goto err;
 
     if (x->length != 0) {
@@ -354,15 +354,15 @@ static int dh_security_bits(const EVP_PKEY *pkey)
 
 static int dh_cmp_parameters(const EVP_PKEY *a, const EVP_PKEY *b)
 {
-    return ffc_params_cmp(&a->pkey.dh->params, &a->pkey.dh->params,
-                          a->ameth != &dhx_asn1_meth);
+    return ossl_ffc_params_cmp(&a->pkey.dh->params, &a->pkey.dh->params,
+                               a->ameth != &dhx_asn1_meth);
 }
 
 static int int_dh_param_copy(DH *to, const DH *from, int is_x942)
 {
     if (is_x942 == -1)
         is_x942 = (from->params.q != NULL);
-    if (!ffc_params_copy(&to->params, &from->params))
+    if (!ossl_ffc_params_copy(&to->params, &from->params))
         return 0;
     if (!is_x942)
         to->length = from->length;
@@ -560,7 +560,7 @@ static int dh_pkey_import_from_type(const OSSL_PARAM params[], void *vpctx,
 {
     EVP_PKEY_CTX *pctx = vpctx;
     EVP_PKEY *pkey = EVP_PKEY_CTX_get0_pkey(pctx);
-    DH *dh = dh_new_with_libctx(pctx->libctx);
+    DH *dh = dh_new_ex(pctx->libctx);
 
     if (dh == NULL) {
         ERR_raise(ERR_LIB_DH, ERR_R_MALLOC_FAILURE);

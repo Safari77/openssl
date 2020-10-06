@@ -88,6 +88,7 @@ static int try_pkcs12(struct extracted_param_data_st *, OSSL_STORE_INFO **,
                                                                         \
         if (ERR_GET_LIB(err) == ERR_LIB_ASN1                            \
             && (ERR_GET_REASON(err) == ASN1_R_UNKNOWN_PUBLIC_KEY_TYPE   \
+                || ERR_GET_REASON(err) == ASN1_R_NO_MATCHING_CHOICE_TYPE \
                 || ERR_GET_REASON(err) == ERR_R_NESTED_ASN1_ERROR))     \
             ERR_pop_to_mark();                                          \
         else                                                            \
@@ -256,7 +257,8 @@ static EVP_PKEY *try_key_value(struct extracted_param_data_st *data,
     if (membio == NULL)
         return 0;
 
-    decoderctx = OSSL_DECODER_CTX_new_by_EVP_PKEY(&pk, "DER", libctx, propq);
+    decoderctx =
+        OSSL_DECODER_CTX_new_by_EVP_PKEY(&pk, "DER", NULL, libctx, propq);
     (void)OSSL_DECODER_CTX_set_passphrase_cb(decoderctx, cb, cbarg);
 
     /* No error if this couldn't be decoded */
@@ -334,22 +336,8 @@ static EVP_PKEY *try_key_value_legacy(struct extracted_param_data_st *data,
             p8info = d2i_PKCS8_PRIV_KEY_INFO(NULL, &derp, der_len);
             RESET_ERR_MARK();
             if (p8info != NULL) {
-                pk = EVP_PKCS82PKEY_with_libctx(p8info, libctx, propq);
+                pk = EVP_PKCS82PKEY_ex(p8info, libctx, propq);
                 PKCS8_PRIV_KEY_INFO_free(p8info);
-            }
-
-            /*
-             * It wasn't PKCS#8, so we must try the hard way.
-             * However, we can cheat a little bit, because we know
-             * what's not yet fully supported in out decoders.
-             * TODO(3.0) Eliminate these when we have decoder support.
-             */
-            if (pk == NULL) {
-                derp = der;
-                pk = d2i_PrivateKey_ex(EVP_PKEY_SM2, NULL,
-                                       &derp, der_len,
-                                       libctx, NULL);
-                RESET_ERR_MARK();
             }
         }
 
@@ -359,19 +347,6 @@ static EVP_PKEY *try_key_value_legacy(struct extracted_param_data_st *data,
         OPENSSL_free(new_der);
         der = data->octet_data;
         der_len = (long)data->octet_data_size;
-    }
-
-    /*
-     * Last, we try parameters.  We cheat the same way we do for
-     * private keys above.
-     * TODO(3.0) Eliminate these when we have decoder support.
-     */
-    if (pk == NULL) {
-        derp = der;
-        pk = d2i_KeyParams(EVP_PKEY_SM2, NULL, &derp, der_len);
-        RESET_ERR_MARK();
-        if (pk != NULL)
-            *store_info_new = OSSL_STORE_INFO_new_PARAMS;
     }
     CLEAR_ERR_MARK();
 

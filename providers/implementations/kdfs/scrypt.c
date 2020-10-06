@@ -266,7 +266,7 @@ static const OSSL_PARAM *kdf_scrypt_gettable_ctx_params(ossl_unused void *p_ctx)
     return known_gettable_ctx_params;
 }
 
-const OSSL_DISPATCH kdf_scrypt_functions[] = {
+const OSSL_DISPATCH ossl_kdf_scrypt_functions[] = {
     { OSSL_FUNC_KDF_NEWCTX, (void(*)(void))kdf_scrypt_new },
     { OSSL_FUNC_KDF_FREECTX, (void(*)(void))kdf_scrypt_free },
     { OSSL_FUNC_KDF_RESET, (void(*)(void))kdf_scrypt_reset },
@@ -488,15 +488,15 @@ static int scrypt_alg(const char *pass, size_t passlen,
     X = (uint32_t *)(B + Blen);
     T = X + 32 * r;
     V = T + 32 * r;
-    if (pkcs5_pbkdf2_hmac_with_libctx(pass, passlen, salt, saltlen, 1, sha256,
-                                      (int)Blen, B, libctx, propq) == 0)
+    if (pkcs5_pbkdf2_hmac_ex(pass, passlen, salt, saltlen, 1, sha256, (int)Blen,
+                             B, libctx, propq) == 0)
         goto err;
 
     for (i = 0; i < p; i++)
         scryptROMix(B + 128 * r * i, r, N, X, T, V);
 
-    if (pkcs5_pbkdf2_hmac_with_libctx(pass, passlen, B, (int)Blen, 1, sha256,
-                                      keylen, key, libctx, propq) == 0)
+    if (pkcs5_pbkdf2_hmac_ex(pass, passlen, B, (int)Blen, 1, sha256, keylen,
+                             key, libctx, propq) == 0)
         goto err;
     rv = 1;
  err:

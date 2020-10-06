@@ -233,7 +233,8 @@ static int ecdsa_digest_signverify_init(void *vctx, const char *mdname,
      */
     ctx->aid_len = 0;
     if (WPACKET_init_der(&pkt, ctx->aid_buf, sizeof(ctx->aid_buf))
-        && DER_w_algorithmIdentifier_ECDSA_with_MD(&pkt, -1, ctx->ec, md_nid)
+        && ossl_DER_w_algorithmIdentifier_ECDSA_with_MD(&pkt, -1, ctx->ec,
+                                                        md_nid)
         && WPACKET_finish(&pkt)) {
         WPACKET_get_total_written(&pkt, &ctx->aid_len);
         ctx->aid = WPACKET_get_curr(&pkt);
@@ -504,7 +505,7 @@ static const OSSL_PARAM *ecdsa_settable_ctx_md_params(void *vctx)
     return EVP_MD_settable_ctx_params(ctx->md);
 }
 
-const OSSL_DISPATCH ecdsa_signature_functions[] = {
+const OSSL_DISPATCH ecossl_dsa_signature_functions[] = {
     { OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))ecdsa_newctx },
     { OSSL_FUNC_SIGNATURE_SIGN_INIT, (void (*)(void))ecdsa_sign_init },
     { OSSL_FUNC_SIGNATURE_SIGN, (void (*)(void))ecdsa_sign },

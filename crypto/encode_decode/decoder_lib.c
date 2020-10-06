@@ -11,6 +11,9 @@
 #include <openssl/bio.h>
 #include <openssl/params.h>
 #include <openssl/provider.h>
+#include <openssl/evperr.h>
+#include <openssl/ecerr.h>
+#include <openssl/x509err.h>
 #include "internal/passphrase.h"
 #include "crypto/decoder.h"
 #include "encoder_local.h"
@@ -424,9 +427,10 @@ static int decoder_process(const OSSL_PARAM params[], void *arg)
     BIO *bio = data->bio;
     long loc;
     size_t i;
-    int ok = 0;
+    int err, ok = 0;
     /* For recursions */
     struct decoder_process_data_st new_data;
+    const char *object_type = NULL;
 
     memset(&new_data, 0, sizeof(new_data));
     new_data.ctx = data->ctx;
@@ -468,6 +472,11 @@ static int decoder_process(const OSSL_PARAM params[], void *arg)
         if (new_data.bio == NULL)
             goto end;
         bio = new_data.bio;
+
+        /* Get the object type if there is one */
+        p = OSSL_PARAM_locate_const(params, OSSL_OBJECT_PARAM_DATA_TYPE);
+        if (p != NULL && !OSSL_PARAM_get_utf8_string_ptr(p, &object_type))
+            goto end;
     }
 
     /*
@@ -511,6 +520,13 @@ static int decoder_process(const OSSL_PARAM params[], void *arg)
             continue;
 
         /*
+         * If the previous decoder gave us an object type, we check to see
+         * if that matches the decoder we're currently considering.
+         */
+        if (object_type != NULL && !OSSL_DECODER_is_a(new_decoder, object_type))
+            continue;
+
+        /*
          * Checking the return value of BIO_reset() or BIO_seek() is unsafe.
          * Furthermore, BIO_reset() is unsafe to use if the source BIO happens
          * to be a BIO_s_mem(), because the earlier BIO_tell() gives us zero
@@ -532,6 +548,16 @@ static int decoder_process(const OSSL_PARAM params[], void *arg)
                                  &new_data.ctx->pwdata);
         if (ok)
             break;
+        err = ERR_peek_last_error();
+        if ((ERR_GET_LIB(err) == ERR_LIB_EVP
+             && ERR_GET_REASON(err) == EVP_R_UNSUPPORTED_PRIVATE_KEY_ALGORITHM)
+#ifndef OPENSSL_NO_EC
+            || (ERR_GET_LIB(err) == ERR_LIB_EC
+                && ERR_GET_REASON(err) == EC_R_UNKNOWN_GROUP)
+#endif
+            || (ERR_GET_LIB(err) == ERR_LIB_X509
+                && ERR_GET_REASON(err) == X509_R_UNSUPPORTED_ALGORITHM))
+            break; /* fatal error; preserve it on the error queue and stop */
     }
 
  end:

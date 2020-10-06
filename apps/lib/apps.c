@@ -7,9 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-/* We need to use some engine deprecated APIs */
-#define OPENSSL_SUPPRESS_DEPRECATED
-
 #if !defined(_POSIX_C_SOURCE) && defined(OPENSSL_SYS_VMS)
 /*
  * On VMS, you need to define this to get the declaration of fileno().  The
@@ -36,9 +33,6 @@
 #include <openssl/pkcs12.h>
 #include <openssl/ui.h>
 #include <openssl/safestack.h>
-#ifndef OPENSSL_NO_ENGINE
-# include <openssl/engine.h>
-#endif
 #ifndef OPENSSL_NO_RSA
 # include <openssl/rsa.h>
 #endif
@@ -364,7 +358,7 @@ CONF *app_load_config_bio(BIO *in, const char *filename)
     CONF *conf;
     int i;
 
-    conf = NCONF_new_with_libctx(app_libctx, NULL);
+    conf = NCONF_new_ex(app_libctx, NULL);
     i = NCONF_load_bio(conf, in, &errorline);
     if (i > 0)
         return conf;
@@ -557,24 +551,11 @@ EVP_PKEY *load_key(const char *uri, int format, int may_stdin,
         if (e == NULL) {
             BIO_printf(bio_err, "No engine specified for loading %s\n", desc);
         } else {
-#ifndef OPENSSL_NO_ENGINE
-            PW_CB_DATA cb_data;
-
-            cb_data.password = pass;
-            cb_data.prompt_info = uri;
-            if (ENGINE_init(e)) {
-                pkey = ENGINE_load_private_key(e, uri,
-                                               (UI_METHOD *)get_ui_method(),
-                                               &cb_data);
-                ENGINE_finish(e);
-            }
+            pkey = load_engine_private_key(e, uri, pass, desc);
             if (pkey == NULL) {
                 BIO_printf(bio_err, "Cannot load %s from engine\n", desc);
                 ERR_print_errors(bio_err);
             }
-#else
-            BIO_printf(bio_err, "Engines not supported for loading %s\n", desc);
-#endif
         }
     } else {
         (void)load_key_certs_crls(uri, may_stdin, pass, desc,
@@ -600,20 +581,11 @@ EVP_PKEY *load_pubkey(const char *uri, int format, int maybe_stdin,
         if (e == NULL) {
             BIO_printf(bio_err, "No engine specified for loading %s\n", desc);
         } else {
-#ifndef OPENSSL_NO_ENGINE
-            PW_CB_DATA cb_data;
-
-            cb_data.password = pass;
-            cb_data.prompt_info = uri;
-            pkey = ENGINE_load_public_key(e, uri, (UI_METHOD *)get_ui_method(),
-                                          &cb_data);
+            pkey = load_engine_public_key(e, uri, pass, desc);
             if (pkey == NULL) {
                 BIO_printf(bio_err, "Cannot load %s from engine\n", desc);
                 ERR_print_errors(bio_err);
             }
-#else
-            BIO_printf(bio_err, "Engines not supported for loading %s\n", desc);
-#endif
         }
     } else {
         (void)load_key_certs_crls(uri, maybe_stdin, pass, desc,
@@ -756,8 +728,8 @@ int load_key_certs_crls(const char *uri, int maybe_stdin,
             ctx = OSSL_STORE_attach(bio, "file", libctx, propq,
                                     get_ui_method(), &uidata, NULL, NULL);
     } else {
-        ctx = OSSL_STORE_open_with_libctx(uri, libctx, propq, get_ui_method(),
-                                          &uidata, NULL, NULL);
+        ctx = OSSL_STORE_open_ex(uri, libctx, propq, get_ui_method(), &uidata,
+                                 NULL, NULL);
     }
     if (ctx == NULL) {
         BIO_printf(bio_err, "Could not open file or uri for loading");
@@ -1116,16 +1088,14 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
         if (lookup == NULL)
             goto end;
         if (CAfile != NULL) {
-            if (!X509_LOOKUP_load_file_with_libctx(lookup, CAfile,
-                                                   X509_FILETYPE_PEM,
-                                                   libctx, propq)) {
+            if (!X509_LOOKUP_load_file_ex(lookup, CAfile, X509_FILETYPE_PEM,
+                                          libctx, propq)) {
                 BIO_printf(bio_err, "Error loading file %s\n", CAfile);
                 goto end;
             }
         } else {
-            X509_LOOKUP_load_file_with_libctx(lookup, NULL,
-                                              X509_FILETYPE_DEFAULT,
-                                              libctx, propq);
+            X509_LOOKUP_load_file_ex(lookup, NULL, X509_FILETYPE_DEFAULT,
+                                     libctx, propq);
         }
     }
 
@@ -1147,7 +1117,7 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
         lookup = X509_STORE_add_lookup(store, X509_LOOKUP_store());
         if (lookup == NULL)
             goto end;
-        if (!X509_LOOKUP_add_store_with_libctx(lookup, CAstore, libctx, propq)) {
+        if (!X509_LOOKUP_add_store_ex(lookup, CAstore, libctx, propq)) {
             if (CAstore != NULL)
                 BIO_printf(bio_err, "Error loading store URI %s\n", CAstore);
             goto end;
@@ -1160,64 +1130,6 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
     ERR_print_errors(bio_err);
     X509_STORE_free(store);
     return NULL;
-}
-
-#ifndef OPENSSL_NO_ENGINE
-/* Try to load an engine in a shareable library */
-static ENGINE *try_load_engine(const char *engine)
-{
-    ENGINE *e = ENGINE_by_id("dynamic");
-    if (e) {
-        if (!ENGINE_ctrl_cmd_string(e, "SO_PATH", engine, 0)
-            || !ENGINE_ctrl_cmd_string(e, "LOAD", NULL, 0)) {
-            ENGINE_free(e);
-            e = NULL;
-        }
-    }
-    return e;
-}
-#endif
-
-ENGINE *setup_engine_methods(const char *id, unsigned int methods, int debug)
-{
-    ENGINE *e = NULL;
-
-#ifndef OPENSSL_NO_ENGINE
-    if (id != NULL) {
-        if (strcmp(id, "auto") == 0) {
-            BIO_printf(bio_err, "Enabling auto ENGINE support\n");
-            ENGINE_register_all_complete();
-            return NULL;
-        }
-        if ((e = ENGINE_by_id(id)) == NULL
-            && (e = try_load_engine(id)) == NULL) {
-            BIO_printf(bio_err, "Invalid engine \"%s\"\n", id);
-            ERR_print_errors(bio_err);
-            return NULL;
-        }
-        if (debug)
-            (void)ENGINE_ctrl(e, ENGINE_CTRL_SET_LOGSTREAM, 0, bio_err, 0);
-        if (!ENGINE_ctrl_cmd(e, "SET_USER_INTERFACE", 0,
-                             (void *)get_ui_method(), 0, 1)
-                || !ENGINE_set_default(e, methods)) {
-            BIO_printf(bio_err, "Cannot use engine \"%s\"\n", ENGINE_get_id(e));
-            ERR_print_errors(bio_err);
-            ENGINE_free(e);
-            return NULL;
-        }
-
-        BIO_printf(bio_err, "Engine \"%s\" set.\n", ENGINE_get_id(e));
-    }
-#endif
-    return e;
-}
-
-void release_engine(ENGINE *e)
-{
-#ifndef OPENSSL_NO_ENGINE
-    /* Free our "structural" reference. */
-    ENGINE_free(e);
-#endif
 }
 
 static unsigned long index_serial_hash(const OPENSSL_CSTRING *a)

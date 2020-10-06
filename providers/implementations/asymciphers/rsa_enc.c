@@ -165,12 +165,11 @@ static int rsa_encrypt(void *vprsactx, unsigned char *out, size_t *outlen,
             return 0;
         }
         ret =
-            rsa_padding_add_PKCS1_OAEP_mgf1_with_libctx(prsactx->libctx, tbuf,
-                                                        rsasize, in, inlen,
-                                                        prsactx->oaep_label,
-                                                        prsactx->oaep_labellen,
-                                                        prsactx->oaep_md,
-                                                        prsactx->mgf1_md);
+            rsa_padding_add_PKCS1_OAEP_mgf1_ex(prsactx->libctx, tbuf, rsasize,
+                                               in, inlen, prsactx->oaep_label,
+                                               prsactx->oaep_labellen,
+                                               prsactx->oaep_md,
+                                               prsactx->mgf1_md);
 
         if (!ret) {
             OPENSSL_free(tbuf);
@@ -563,7 +562,7 @@ static const OSSL_PARAM *rsa_settable_ctx_params(ossl_unused void *provctx)
     return known_settable_ctx_params;
 }
 
-const OSSL_DISPATCH rsa_asym_cipher_functions[] = {
+const OSSL_DISPATCH ossl_rsa_asym_cipher_functions[] = {
     { OSSL_FUNC_ASYM_CIPHER_NEWCTX, (void (*)(void))rsa_newctx },
     { OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, (void (*)(void))rsa_encrypt_init },
     { OSSL_FUNC_ASYM_CIPHER_ENCRYPT, (void (*)(void))rsa_encrypt },

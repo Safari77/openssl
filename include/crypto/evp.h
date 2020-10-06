@@ -18,6 +18,22 @@
  */
 #define EVP_MD_CTX_FLAG_KEEP_PKEY_CTX   0x0400
 
+/*
+ * An EVP_PKEY can have the following support states:
+ *
+ * Supports legacy implementations only:
+ *
+ *      engine != NULL || keytype == NULL
+ *
+ * Supports provided implementations:
+ *
+ *      engine == NULL && keytype != NULL
+ */
+#define evp_pkey_ctx_is_legacy(ctx)                             \
+    ((ctx)->engine != NULL || (ctx)->keytype == NULL)
+#define evp_pkey_ctx_is_provided(ctx)                           \
+    (!evp_pkey_ctx_is_legacy(ctx))
+
 struct evp_pkey_ctx_st {
     /* Actual operation */
     int operation;
@@ -788,11 +804,10 @@ void evp_encode_ctx_set_flags(EVP_ENCODE_CTX *ctx, unsigned int flags);
 const EVP_CIPHER *evp_get_cipherbyname_ex(OPENSSL_CTX *libctx, const char *name);
 const EVP_MD *evp_get_digestbyname_ex(OPENSSL_CTX *libctx, const char *name);
 
-int pkcs5_pbkdf2_hmac_with_libctx(const char *pass, int passlen,
-                                  const unsigned char *salt, int saltlen,
-                                  int iter, const EVP_MD *digest, int keylen,
-                                  unsigned char *out,
-                                  OPENSSL_CTX *libctx, const char *propq);
+int pkcs5_pbkdf2_hmac_ex(const char *pass, int passlen,
+                         const unsigned char *salt, int saltlen, int iter,
+                         const EVP_MD *digest, int keylen, unsigned char *out,
+                         OPENSSL_CTX *libctx, const char *propq);
 
 #ifndef FIPS_MODULE
 /*
@@ -810,9 +825,8 @@ int pkcs5_pbkdf2_hmac_with_libctx(const char *pass, int passlen,
 int evp_pkey_ctx_set_params_strict(EVP_PKEY_CTX *ctx, OSSL_PARAM *params);
 int evp_pkey_ctx_get_params_strict(EVP_PKEY_CTX *ctx, OSSL_PARAM *params);
 
-EVP_MD_CTX *evp_md_ctx_new_with_libctx(EVP_PKEY *pkey,
-                                       const ASN1_OCTET_STRING *id,
-                                       OPENSSL_CTX *libctx, const char *propq);
+EVP_MD_CTX *evp_md_ctx_new_ex(EVP_PKEY *pkey, const ASN1_OCTET_STRING *id,
+                              OPENSSL_CTX *libctx, const char *propq);
 int evp_pkey_name2type(const char *name);
 
 int evp_pkey_ctx_set1_id_prov(EVP_PKEY_CTX *ctx, const void *id, int len);

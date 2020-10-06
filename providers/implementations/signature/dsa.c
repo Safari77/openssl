@@ -157,8 +157,8 @@ static int dsa_setup_md(PROV_DSA_CTX *ctx,
          */
         ctx->aid_len = 0;
         if (WPACKET_init_der(&pkt, ctx->aid_buf, sizeof(ctx->aid_buf))
-            && DER_w_algorithmIdentifier_DSA_with_MD(&pkt, -1, ctx->dsa,
-                                                     md_nid)
+            && ossl_DER_w_algorithmIdentifier_DSA_with_MD(&pkt, -1, ctx->dsa,
+                                                          md_nid)
             && WPACKET_finish(&pkt)) {
             WPACKET_get_total_written(&pkt, &ctx->aid_len);
             ctx->aid = WPACKET_get_curr(&pkt);
@@ -529,7 +529,7 @@ static const OSSL_PARAM *dsa_settable_ctx_md_params(void *vpdsactx)
     return EVP_MD_settable_ctx_params(pdsactx->md);
 }
 
-const OSSL_DISPATCH dsa_signature_functions[] = {
+const OSSL_DISPATCH ossl_dsa_signature_functions[] = {
     { OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))dsa_newctx },
     { OSSL_FUNC_SIGNATURE_SIGN_INIT, (void (*)(void))dsa_sign_init },
     { OSSL_FUNC_SIGNATURE_SIGN, (void (*)(void))dsa_sign },
