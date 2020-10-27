@@ -236,7 +236,7 @@ void *ec_newdata(void *provctx)
 {
     if (!ossl_prov_is_running())
         return NULL;
-    return EC_KEY_new_ex(PROV_LIBRARY_CONTEXT_OF(provctx), NULL);
+    return EC_KEY_new_ex(PROV_LIBCTX_OF(provctx), NULL);
 }
 
 static
@@ -246,9 +246,9 @@ void ec_freedata(void *keydata)
 }
 
 static
-int ec_has(void *keydata, int selection)
+int ec_has(const void *keydata, int selection)
 {
-    EC_KEY *ec = keydata;
+    const EC_KEY *ec = keydata;
     int ok = 0;
 
     if (ossl_prov_is_running() && ec != NULL) {
@@ -567,7 +567,7 @@ int common_get_params(void *key, OSSL_PARAM params[], int sm2)
     const EC_GROUP *ecg = NULL;
     OSSL_PARAM *p;
     unsigned char *pub_key = NULL, *genbuf = NULL;
-    OPENSSL_CTX *libctx;
+    OSSL_LIB_CTX *libctx;
     const char *propq;
     BN_CTX *bnctx = NULL;
 
@@ -650,7 +650,8 @@ int common_get_params(void *key, OSSL_PARAM params[], int sm2)
                 goto err;
         }
     }
-    if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_TLS_ENCODED_PT)) != NULL) {
+    if ((p = OSSL_PARAM_locate(params,
+                               OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY)) != NULL) {
         p->return_size = EC_POINT_point2oct(EC_KEY_get0_group(key),
                                             EC_KEY_get0_public_key(key),
                                             POINT_CONVERSION_UNCOMPRESSED,
@@ -693,7 +694,7 @@ static const OSSL_PARAM ec_known_gettable_params[] = {
     OSSL_PARAM_int(OSSL_PKEY_PARAM_BITS, NULL),
     OSSL_PARAM_int(OSSL_PKEY_PARAM_SECURITY_BITS, NULL),
     OSSL_PARAM_int(OSSL_PKEY_PARAM_MAX_SIZE, NULL),
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     EC_IMEXPORTABLE_DOM_PARAMETERS,
     EC2M_GETTABLE_DOM_PARAMS
     EC_IMEXPORTABLE_PUBLIC_KEY,
@@ -712,7 +713,7 @@ const OSSL_PARAM *ec_gettable_params(void *provctx)
 
 static const OSSL_PARAM ec_known_settable_params[] = {
     OSSL_PARAM_int(OSSL_PKEY_PARAM_USE_COFACTOR_ECDH, NULL),
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -728,7 +729,7 @@ int ec_set_params(void *key, const OSSL_PARAM params[])
     EC_KEY *eck = key;
     const OSSL_PARAM *p;
 
-    p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_TLS_ENCODED_PT);
+    p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY);
     if (p != NULL) {
         BN_CTX *ctx = BN_CTX_new_ex(ec_key_get_libctx(key));
         int ret = 1;
@@ -756,7 +757,7 @@ static const OSSL_PARAM sm2_known_gettable_params[] = {
     OSSL_PARAM_int(OSSL_PKEY_PARAM_BITS, NULL),
     OSSL_PARAM_int(OSSL_PKEY_PARAM_SECURITY_BITS, NULL),
     OSSL_PARAM_int(OSSL_PKEY_PARAM_MAX_SIZE, NULL),
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     EC_IMEXPORTABLE_DOM_PARAMETERS,
     EC_IMEXPORTABLE_PUBLIC_KEY,
     OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_EC_PUB_X, NULL, 0),
@@ -772,7 +773,7 @@ const OSSL_PARAM *sm2_gettable_params(ossl_unused void *provctx)
 }
 
 static const OSSL_PARAM sm2_known_settable_params[] = {
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -784,9 +785,9 @@ const OSSL_PARAM *sm2_settable_params(ossl_unused void *provctx)
 #endif
 
 static
-int ec_validate(void *keydata, int selection)
+int ec_validate(const void *keydata, int selection)
 {
-    EC_KEY *eck = keydata;
+    const EC_KEY *eck = keydata;
     int ok = 0;
     BN_CTX *ctx = NULL;
 
@@ -817,7 +818,7 @@ int ec_validate(void *keydata, int selection)
 }
 
 struct ec_gen_ctx {
-    OPENSSL_CTX *libctx;
+    OSSL_LIB_CTX *libctx;
     char *group_name;
     char *encoding;
     char *field_type;
@@ -831,7 +832,7 @@ struct ec_gen_ctx {
 
 static void *ec_gen_init(void *provctx, int selection)
 {
-    OPENSSL_CTX *libctx = PROV_LIBRARY_CONTEXT_OF(provctx);
+    OSSL_LIB_CTX *libctx = PROV_LIBCTX_OF(provctx);
     struct ec_gen_ctx *gctx = NULL;
 
     if (!ossl_prov_is_running() || (selection & (EC_POSSIBLE_SELECTIONS)) == 0)

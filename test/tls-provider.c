@@ -418,9 +418,9 @@ static void xor_freedata(void *keydata)
     OPENSSL_free(keydata);
 }
 
-static int xor_has(void *vkey, int selection)
+static int xor_has(const void *vkey, int selection)
 {
-    XORKEY *key = vkey;
+    const XORKEY *key = vkey;
     int ok = 0;
 
     if (key != NULL) {
@@ -476,7 +476,8 @@ static ossl_inline int xor_get_params(void *vkey, OSSL_PARAM params[])
         && !OSSL_PARAM_set_int(p, xor_group.secbits))
         return 0;
 
-    if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_TLS_ENCODED_PT)) != NULL) {
+    if ((p = OSSL_PARAM_locate(params,
+                               OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY)) != NULL) {
         if (p->data_type != OSSL_PARAM_OCTET_STRING)
             return 0;
         p->return_size = XOR_KEY_SIZE;
@@ -490,7 +491,7 @@ static ossl_inline int xor_get_params(void *vkey, OSSL_PARAM params[])
 static const OSSL_PARAM xor_params[] = {
     OSSL_PARAM_int(OSSL_PKEY_PARAM_BITS, NULL),
     OSSL_PARAM_int(OSSL_PKEY_PARAM_SECURITY_BITS, NULL),
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -504,7 +505,7 @@ static int xor_set_params(void *vkey, const OSSL_PARAM params[])
     XORKEY *key = vkey;
     const OSSL_PARAM *p;
 
-    p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_TLS_ENCODED_PT);
+    p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY);
     if (p != NULL) {
         if (p->data_type != OSSL_PARAM_OCTET_STRING
                 || p->data_size != XOR_KEY_SIZE)
@@ -517,7 +518,7 @@ static int xor_set_params(void *vkey, const OSSL_PARAM params[])
 }
 
 static const OSSL_PARAM xor_known_settable_params[] = {
-    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_TLS_ENCODED_PT, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0),
     OSSL_PARAM_END
 };
 
@@ -528,7 +529,7 @@ static const OSSL_PARAM *xor_settable_params(void *provctx)
 
 struct xor_gen_ctx {
     int selection;
-    OPENSSL_CTX *libctx;
+    OSSL_LIB_CTX *libctx;
 };
 
 static void *xor_gen_init(void *provctx, int selection)
@@ -542,8 +543,8 @@ static void *xor_gen_init(void *provctx, int selection)
     if ((gctx = OPENSSL_zalloc(sizeof(*gctx))) != NULL)
         gctx->selection = selection;
 
-    /* Our provctx is really just an OPENSSL_CTX */
-    gctx->libctx = (OPENSSL_CTX *)provctx;
+    /* Our provctx is really just an OSSL_LIB_CTX */
+    gctx->libctx = (OSSL_LIB_CTX *)provctx;
 
     return gctx;
 }
@@ -648,14 +649,14 @@ static const OSSL_ALGORITHM *tls_prov_query(void *provctx, int operation_id,
 
 /* Functions we provide to the core */
 static const OSSL_DISPATCH tls_prov_dispatch_table[] = {
-    { OSSL_FUNC_PROVIDER_TEARDOWN, (void (*)(void))OPENSSL_CTX_free },
+    { OSSL_FUNC_PROVIDER_TEARDOWN, (void (*)(void))OSSL_LIB_CTX_free },
     { OSSL_FUNC_PROVIDER_QUERY_OPERATION, (void (*)(void))tls_prov_query },
     { OSSL_FUNC_PROVIDER_GET_CAPABILITIES, (void (*)(void))tls_prov_get_capabilities },
     { 0, NULL }
 };
 
 static
-unsigned int randomize_tls_group_id(OPENSSL_CTX *libctx)
+unsigned int randomize_tls_group_id(OSSL_LIB_CTX *libctx)
 {
     /*
      * Randomise the group_id we're going to use to ensure we don't interoperate
@@ -692,7 +693,7 @@ int tls_provider_init(const OSSL_CORE_HANDLE *handle,
                       const OSSL_DISPATCH **out,
                       void **provctx)
 {
-    OPENSSL_CTX *libctx = OPENSSL_CTX_new();
+    OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new();
 
     *provctx = libctx;
 

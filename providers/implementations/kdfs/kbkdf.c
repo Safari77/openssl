@@ -218,7 +218,7 @@ static int kbkdf_derive(void *vctx, unsigned char *key, size_t keylen)
         return 0;
     }
 
-    h = EVP_MAC_size(ctx->ctx_init);
+    h = EVP_MAC_CTX_get_mac_size(ctx->ctx_init);
     if (h == 0)
         goto done;
     if (ctx->iv_len != 0 && ctx->iv_len != h) {
@@ -254,7 +254,7 @@ static int kbkdf_set_buffer(unsigned char **out, size_t *out_len,
 static int kbkdf_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     KBKDF *ctx = (KBKDF *)vctx;
-    OPENSSL_CTX *libctx = PROV_LIBRARY_CONTEXT_OF(ctx->provctx);
+    OSSL_LIB_CTX *libctx = PROV_LIBCTX_OF(ctx->provctx);
     const OSSL_PARAM *p;
     OSSL_PARAM mparams[2];
 

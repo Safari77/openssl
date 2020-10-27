@@ -28,7 +28,7 @@ static int cms_cb(int ok, X509_STORE_CTX *ctx);
 static void receipt_request_print(CMS_ContentInfo *cms);
 static CMS_ReceiptRequest *make_receipt_request(
     STACK_OF(OPENSSL_STRING) *rr_to, int rr_allorfirst,
-    STACK_OF(OPENSSL_STRING) *rr_from, OPENSSL_CTX *libctx, const char *propq);
+    STACK_OF(OPENSSL_STRING) *rr_from, OSSL_LIB_CTX *libctx, const char *propq);
 static int cms_set_pkey_param(EVP_PKEY_CTX *pctx,
                               STACK_OF(OPENSSL_STRING) *param);
 
@@ -233,7 +233,8 @@ const OPTIONS cms_options[] = {
 
 static CMS_ContentInfo *load_content_info(int informat, BIO *in, BIO **indata,
                                           const char *name,
-                                          OPENSSL_CTX *libctx, const char *propq)
+                                          OSSL_LIB_CTX *libctx,
+                                          const char *propq)
 {
     CMS_ContentInfo *ret, *ci;
 
@@ -301,7 +302,7 @@ int cms_main(int argc, char **argv)
     long ltmp;
     const char *mime_eol = "\n";
     OPTION_CHOICE o;
-    OPENSSL_CTX *libctx = app_get0_libctx();
+    OSSL_LIB_CTX *libctx = app_get0_libctx();
     const char *propq = app_get0_propq();
 
     if ((vpm = X509_VERIFY_PARAM_new()) == NULL)
@@ -615,8 +616,7 @@ int cms_main(int argc, char **argv)
             if (operation == SMIME_ENCRYPT) {
                 if (encerts == NULL && (encerts = sk_X509_new_null()) == NULL)
                     goto end;
-                cert = load_cert(opt_arg(), FORMAT_UNDEF,
-                                 "recipient certificate file");
+                cert = load_cert(opt_arg(), "recipient certificate file");
                 if (cert == NULL)
                     goto end;
                 sk_X509_push(encerts, cert);
@@ -808,8 +808,7 @@ int cms_main(int argc, char **argv)
             if ((encerts = sk_X509_new_null()) == NULL)
                 goto end;
         while (*argv) {
-            if ((cert = load_cert(*argv, FORMAT_UNDEF,
-                                  "recipient certificate file")) == NULL)
+            if ((cert = load_cert(*argv, "recipient certificate file")) == NULL)
                 goto end;
             sk_X509_push(encerts, cert);
             cert = NULL;
@@ -825,7 +824,7 @@ int cms_main(int argc, char **argv)
     }
 
     if (recipfile != NULL && (operation == SMIME_DECRYPT)) {
-        if ((recip = load_cert(recipfile, FORMAT_UNDEF,
+        if ((recip = load_cert(recipfile,
                                "recipient certificate file")) == NULL) {
             ERR_print_errors(bio_err);
             goto end;
@@ -833,7 +832,7 @@ int cms_main(int argc, char **argv)
     }
 
     if (originatorfile != NULL) {
-        if ((originator = load_cert(originatorfile, FORMAT_UNDEF,
+        if ((originator = load_cert(originatorfile,
                                     "originator certificate file")) == NULL) {
              ERR_print_errors(bio_err);
              goto end;
@@ -841,7 +840,7 @@ int cms_main(int argc, char **argv)
     }
 
     if (operation == SMIME_SIGN_RECEIPT) {
-        if ((signer = load_cert(signerfile, FORMAT_UNDEF,
+        if ((signer = load_cert(signerfile,
                                 "receipt signer certificate file")) == NULL) {
             ERR_print_errors(bio_err);
             goto end;
@@ -861,13 +860,6 @@ int cms_main(int argc, char **argv)
     if (keyfile != NULL) {
         key = load_key(keyfile, keyform, 0, passin, e, "signing key");
         if (key == NULL)
-            goto end;
-
-        /*
-         * TODO: Remove this when CMS has full support for provider-native
-         * EVP_PKEYs
-         */
-        if (EVP_PKEY_get0(key) == NULL)
             goto end;
     }
 
@@ -1055,8 +1047,7 @@ int cms_main(int argc, char **argv)
             signerfile = sk_OPENSSL_STRING_value(sksigners, i);
             keyfile = sk_OPENSSL_STRING_value(skkeys, i);
 
-            signer = load_cert(signerfile, FORMAT_UNDEF,
-                               "signer certificate");
+            signer = load_cert(signerfile, "signer certificate");
             if (signer == NULL) {
                 ret = 2;
                 goto end;
@@ -1066,13 +1057,6 @@ int cms_main(int argc, char **argv)
                 ret = 2;
                 goto end;
             }
-
-            /*
-             * TODO: Remove this when CMS has full support for provider-native
-             * EVP_PKEYs
-             */
-            if (EVP_PKEY_get0(key) == NULL)
-                goto end;
 
             for (kparam = key_first; kparam; kparam = kparam->next) {
                 if (kparam->idx == i) {
@@ -1403,7 +1387,7 @@ static STACK_OF(GENERAL_NAMES) *make_names_stack(STACK_OF(OPENSSL_STRING) *ns)
 static CMS_ReceiptRequest *make_receipt_request(
    STACK_OF(OPENSSL_STRING) *rr_to, int rr_allorfirst,
    STACK_OF(OPENSSL_STRING) *rr_from,
-   OPENSSL_CTX *libctx, const char *propq)
+   OSSL_LIB_CTX *libctx, const char *propq)
 {
     STACK_OF(GENERAL_NAMES) *rct_to = NULL, *rct_from = NULL;
     CMS_ReceiptRequest *rr;

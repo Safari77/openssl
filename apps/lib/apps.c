@@ -63,7 +63,7 @@ typedef struct {
     unsigned long mask;
 } NAME_EX_TBL;
 
-static OPENSSL_CTX *app_libctx = NULL;
+static OSSL_LIB_CTX *app_libctx = NULL;
 
 static int set_table_opts(unsigned long *flags, const char *arg,
                           const NAME_EX_TBL * in_tbl);
@@ -322,7 +322,7 @@ static char *app_get_pass(const char *arg, int keepbio)
     return OPENSSL_strdup(tpass);
 }
 
-OPENSSL_CTX *app_get0_libctx(void)
+OSSL_LIB_CTX *app_get0_libctx(void)
 {
     return app_libctx;
 }
@@ -333,7 +333,7 @@ const char *app_get0_propq(void)
     return NULL;
 }
 
-OPENSSL_CTX *app_create_libctx(void)
+OSSL_LIB_CTX *app_create_libctx(void)
 {
     /*
      * Load the NULL provider into the default library context and create a
@@ -345,7 +345,7 @@ OPENSSL_CTX *app_create_libctx(void)
             BIO_puts(bio_err, "Failed to create null provider\n");
             return NULL;
         }
-        app_libctx = OPENSSL_CTX_new();
+        app_libctx = OSSL_LIB_CTX_new();
     }
     if (app_libctx == NULL)
         BIO_puts(bio_err, "Failed to create library context\n");
@@ -476,7 +476,7 @@ X509 *load_cert_pass(const char *uri, int maybe_stdin,
     if (desc == NULL)
         desc = "certificate";
     (void)load_key_certs_crls(uri, maybe_stdin, pass, desc,
-                              NULL, NULL, &cert, NULL, NULL, NULL);
+                              NULL, NULL, NULL, &cert, NULL, NULL, NULL);
     if (cert == NULL) {
         BIO_printf(bio_err, "Unable to load %s\n", desc);
         ERR_print_errors(bio_err);
@@ -485,14 +485,14 @@ X509 *load_cert_pass(const char *uri, int maybe_stdin,
 }
 
 /* the format parameter is meanwhile not needed anymore and thus ignored */
-X509_CRL *load_crl(const char *uri, int format, const char *desc)
+X509_CRL *load_crl(const char *uri, const char *desc)
 {
     X509_CRL *crl = NULL;
 
     if (desc == NULL)
         desc = "CRL";
     (void)load_key_certs_crls(uri, 0, NULL, desc,
-                              NULL,  NULL, NULL, NULL, &crl, NULL);
+                              NULL, NULL,  NULL, NULL, NULL, &crl, NULL);
     if (crl == NULL) {
         BIO_printf(bio_err, "Unable to load %s\n", desc);
         ERR_print_errors(bio_err);
@@ -559,7 +559,7 @@ EVP_PKEY *load_key(const char *uri, int format, int may_stdin,
         }
     } else {
         (void)load_key_certs_crls(uri, may_stdin, pass, desc,
-                                  &pkey, NULL, NULL, NULL, NULL, NULL);
+                                  &pkey, NULL, NULL, NULL, NULL, NULL, NULL);
     }
 
     if (pkey == NULL) {
@@ -589,13 +589,29 @@ EVP_PKEY *load_pubkey(const char *uri, int format, int maybe_stdin,
         }
     } else {
         (void)load_key_certs_crls(uri, maybe_stdin, pass, desc,
-                                  NULL, &pkey, NULL, NULL, NULL, NULL);
+                                  NULL, &pkey, NULL, NULL, NULL, NULL, NULL);
     }
     if (pkey == NULL) {
         BIO_printf(bio_err, "Unable to load %s\n", desc);
         ERR_print_errors(bio_err);
     }
     return pkey;
+}
+
+EVP_PKEY *load_keyparams(const char *uri, int maybe_stdin, const char *desc)
+{
+    EVP_PKEY *params = NULL;
+
+    if (desc == NULL)
+        desc = "key parameters";
+
+    (void)load_key_certs_crls(uri, maybe_stdin, NULL, desc,
+                              NULL, NULL, &params, NULL, NULL, NULL, NULL);
+    if (params == NULL) {
+        BIO_printf(bio_err, "Unable to load %s\n", desc);
+        ERR_print_errors(bio_err);
+    }
+    return params;
 }
 
 void app_bail_out(char *fmt, ...)
@@ -627,7 +643,7 @@ int load_certs(const char *uri, STACK_OF(X509) **certs,
                const char *pass, const char *desc)
 {
     int was_NULL = *certs == NULL;
-    int ret = load_key_certs_crls(uri, 0, pass, desc, NULL, NULL,
+    int ret = load_key_certs_crls(uri, 0, pass, desc, NULL, NULL, NULL,
                                   NULL, certs, NULL, NULL);
 
     if (!ret && was_NULL) {
@@ -645,7 +661,7 @@ int load_crls(const char *uri, STACK_OF(X509_CRL) **crls,
               const char *pass, const char *desc)
 {
     int was_NULL = *crls == NULL;
-    int ret = load_key_certs_crls(uri, 0, pass, desc, NULL, NULL,
+    int ret = load_key_certs_crls(uri, 0, pass, desc, NULL, NULL, NULL,
                                   NULL, NULL, NULL, crls);
 
     if (!ret && was_NULL) {
@@ -671,12 +687,13 @@ int load_crls(const char *uri, STACK_OF(X509_CRL) **crls,
 int load_key_certs_crls(const char *uri, int maybe_stdin,
                         const char *pass, const char *desc,
                         EVP_PKEY **ppkey, EVP_PKEY **ppubkey,
+                        EVP_PKEY **pparams,
                         X509 **pcert, STACK_OF(X509) **pcerts,
                         X509_CRL **pcrl, STACK_OF(X509_CRL) **pcrls)
 {
     PW_CB_DATA uidata;
     OSSL_STORE_CTX *ctx = NULL;
-    OPENSSL_CTX *libctx = app_get0_libctx();
+    OSSL_LIB_CTX *libctx = app_get0_libctx();
     const char *propq = app_get0_propq();
     int ncerts = 0;
     int ncrls = 0;
@@ -761,6 +778,10 @@ int load_key_certs_crls(const char *uri, int maybe_stdin,
             if (ppubkey != NULL && *ppubkey == NULL)
                 ok = ((*ppubkey = OSSL_STORE_INFO_get1_PUBKEY(info)) != NULL);
             break;
+        case OSSL_STORE_INFO_PARAMS:
+            if (pparams != NULL && *pparams == NULL)
+                ok = ((*pparams = OSSL_STORE_INFO_get1_PARAMS(info)) != NULL);
+            break;
         case OSSL_STORE_INFO_CERT:
             if (pcert != NULL && *pcert == NULL)
                 ok = (*pcert = OSSL_STORE_INFO_get1_CERT(info)) != NULL;
@@ -794,8 +815,11 @@ int load_key_certs_crls(const char *uri, int maybe_stdin,
     if (failed == NULL) {
         int any = 0;
 
-        if (ppkey != NULL && *ppkey == NULL) {
+        if ((ppkey != NULL && *ppkey == NULL)
+            || (ppubkey != NULL && *ppubkey == NULL)) {
             failed = "key";
+        } else if (pparams != NULL && *pparams == NULL) {
+            failed = "params";
         } else if ((pcert != NULL || pcerts != NULL) && ncerts == 0) {
             if (pcert == NULL)
                 any = 1;
@@ -1077,7 +1101,7 @@ X509_STORE *setup_verify(const char *CAfile, int noCAfile,
 {
     X509_STORE *store = X509_STORE_new();
     X509_LOOKUP *lookup;
-    OPENSSL_CTX *libctx = app_get0_libctx();
+    OSSL_LIB_CTX *libctx = app_get0_libctx();
     const char *propq = app_get0_propq();
 
     if (store == NULL)
@@ -1891,7 +1915,7 @@ static X509_CRL *load_crl_crldp(STACK_OF(DIST_POINT) *crldp)
         DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
         urlptr = get_dp_url(dp);
         if (urlptr)
-            return load_crl(urlptr, FORMAT_HTTP, "CRL via CDP");
+            return load_crl(urlptr, "CRL via CDP");
     }
     return NULL;
 }

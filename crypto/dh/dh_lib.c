@@ -24,7 +24,7 @@
 #include "crypto/dh.h"
 #include "dh_local.h"
 
-static DH *dh_new_intern(ENGINE *engine, OPENSSL_CTX *libctx);
+static DH *dh_new_intern(ENGINE *engine, OSSL_LIB_CTX *libctx);
 
 #ifndef FIPS_MODULE
 int DH_set_method(DH *dh, const DH_METHOD *meth)
@@ -63,12 +63,12 @@ DH *DH_new_method(ENGINE *engine)
 }
 #endif /* !FIPS_MODULE */
 
-DH *dh_new_ex(OPENSSL_CTX *libctx)
+DH *dh_new_ex(OSSL_LIB_CTX *libctx)
 {
     return dh_new_intern(NULL, libctx);
 }
 
-static DH *dh_new_intern(ENGINE *engine, OPENSSL_CTX *libctx)
+static DH *dh_new_intern(ENGINE *engine, OSSL_LIB_CTX *libctx)
 {
     DH *ret = OPENSSL_zalloc(sizeof(*ret));
 
@@ -243,6 +243,7 @@ long DH_get_length(const DH *dh)
 int DH_set_length(DH *dh, long length)
 {
     dh->length = length;
+    dh->dirty_cnt++;
     return 1;
 }
 
@@ -324,23 +325,4 @@ FFC_PARAMS *dh_get0_params(DH *dh)
 int dh_get0_nid(const DH *dh)
 {
     return dh->params.nid;
-}
-
-int dh_ffc_params_fromdata(DH *dh, const OSSL_PARAM params[])
-{
-    int ret;
-    FFC_PARAMS *ffc;
-
-    if (dh == NULL)
-        return 0;
-    ffc = dh_get0_params(dh);
-    if (ffc == NULL)
-        return 0;
-
-    ret = ossl_ffc_params_fromdata(ffc, params);
-    if (ret) {
-        dh_cache_named_group(dh);
-        dh->dirty_cnt++;
-    }
-    return ret;
 }

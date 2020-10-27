@@ -10,7 +10,6 @@
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/params.h>
-#include <openssl/obj_mac.h> /* NIDs used by ossl_prov_util_nid_to_name() */
 #include <openssl/fips_names.h>
 #include <openssl/rand.h> /* RAND_get0_public() */
 #include "internal/cryptlib.h"
@@ -43,7 +42,7 @@ int FIPS_security_check_enabled(void);
  * TODO(3.0): Should these be stored in the provider side provctx? Could they
  * ever be different from one init to the next? Unfortunately we can't do this
  * at the moment because c_put_error/c_add_error_vdata do not provide
- * us with the OPENSSL_CTX as a parameter.
+ * us with the OSSL_LIB_CTX as a parameter.
  */
 
 static SELF_TEST_POST_PARAMS selftest_params;
@@ -73,13 +72,13 @@ static OSSL_FUNC_CRYPTO_secure_clear_free_fn *c_CRYPTO_secure_clear_free;
 static OSSL_FUNC_CRYPTO_secure_allocated_fn *c_CRYPTO_secure_allocated;
 static OSSL_FUNC_BIO_vsnprintf_fn *c_BIO_vsnprintf;
 static OSSL_FUNC_self_test_cb_fn *c_stcbfn = NULL;
-static OSSL_FUNC_core_get_library_context_fn *c_get_libctx = NULL;
+static OSSL_FUNC_core_get_libctx_fn *c_get_libctx = NULL;
 
 typedef struct fips_global_st {
     const OSSL_CORE_HANDLE *handle;
 } FIPS_GLOBAL;
 
-static void *fips_prov_ossl_ctx_new(OPENSSL_CTX *libctx)
+static void *fips_prov_ossl_ctx_new(OSSL_LIB_CTX *libctx)
 {
     FIPS_GLOBAL *fgbl = OPENSSL_zalloc(sizeof(*fgbl));
 
@@ -91,7 +90,7 @@ static void fips_prov_ossl_ctx_free(void *fgbl)
     OPENSSL_free(fgbl);
 }
 
-static const OPENSSL_CTX_METHOD fips_prov_ossl_ctx_method = {
+static const OSSL_LIB_CTX_METHOD fips_prov_ossl_ctx_method = {
     fips_prov_ossl_ctx_new,
     fips_prov_ossl_ctx_free,
 };
@@ -182,103 +181,6 @@ static int fips_self_test(void *provctx)
 {
     set_self_test_cb(FIPS_get_core_handle(selftest_params.libctx));
     return SELF_TEST_post(&selftest_params, 1) ? 1 : 0;
-}
-
-/* FIPS specific version of the function of the same name in provlib.c */
-/* TODO(3.0) - Is this function needed ? */
-const char *ossl_prov_util_nid_to_name(int nid)
-{
-    /* We don't have OBJ_nid2n() in FIPS_MODULE so we have an explicit list */
-
-    switch (nid) {
-    /* Digests */
-    case NID_sha1:
-        return "SHA1";
-    case NID_sha224:
-        return "SHA-224";
-    case NID_sha256:
-        return "SHA-256";
-    case NID_sha384:
-        return "SHA-384";
-    case NID_sha512:
-        return "SHA-512";
-    case NID_sha512_224:
-        return "SHA-512/224";
-    case NID_sha512_256:
-        return "SHA-512/256";
-    case NID_sha3_224:
-        return "SHA3-224";
-    case NID_sha3_256:
-        return "SHA3-256";
-    case NID_sha3_384:
-        return "SHA3-384";
-    case NID_sha3_512:
-        return "SHA3-512";
-
-    /* Ciphers */
-    case NID_aes_256_ecb:
-        return "AES-256-ECB";
-    case NID_aes_192_ecb:
-        return "AES-192-ECB";
-    case NID_aes_128_ecb:
-        return "AES-128-ECB";
-    case NID_aes_256_cbc:
-        return "AES-256-CBC";
-    case NID_aes_192_cbc:
-        return "AES-192-CBC";
-    case NID_aes_128_cbc:
-        return "AES-128-CBC";
-    case NID_aes_256_ctr:
-        return "AES-256-CTR";
-    case NID_aes_192_ctr:
-        return "AES-192-CTR";
-    case NID_aes_128_ctr:
-        return "AES-128-CTR";
-    case NID_aes_256_xts:
-        return "AES-256-XTS";
-    case NID_aes_128_xts:
-        return "AES-128-XTS";
-    case NID_aes_256_gcm:
-        return "AES-256-GCM";
-    case NID_aes_192_gcm:
-        return "AES-192-GCM";
-    case NID_aes_128_gcm:
-        return "AES-128-GCM";
-    case NID_aes_256_ccm:
-        return "AES-256-CCM";
-    case NID_aes_192_ccm:
-        return "AES-192-CCM";
-    case NID_aes_128_ccm:
-        return "AES-128-CCM";
-    case NID_id_aes256_wrap:
-        return "AES-256-WRAP";
-    case NID_id_aes192_wrap:
-        return "AES-192-WRAP";
-    case NID_id_aes128_wrap:
-        return "AES-128-WRAP";
-    case NID_id_aes256_wrap_pad:
-        return "AES-256-WRAP-PAD";
-    case NID_id_aes192_wrap_pad:
-        return "AES-192-WRAP-PAD";
-    case NID_id_aes128_wrap_pad:
-        return "AES-128-WRAP-PAD";
-    case NID_des_ede3_ecb:
-        return "DES-EDE3";
-    case NID_des_ede3_cbc:
-        return "DES-EDE3-CBC";
-    case NID_aes_256_cbc_hmac_sha256:
-        return "AES-256-CBC-HMAC-SHA256";
-    case NID_aes_128_cbc_hmac_sha256:
-        return "AES-128-CBC-HMAC-SHA256";
-    case NID_aes_256_cbc_hmac_sha1:
-        return "AES-256-CBC-HMAC-SHA1";
-    case NID_aes_128_cbc_hmac_sha1:
-        return "AES-128-CBC-HMAC-SHA1";
-    default:
-        break;
-    }
-
-    return NULL;
 }
 
 /*
@@ -544,7 +446,7 @@ static const OSSL_ALGORITHM *fips_query(void *provctx, int operation_id,
 
 static void fips_teardown(void *provctx)
 {
-    OPENSSL_CTX_free(PROV_LIBRARY_CONTEXT_OF(provctx));
+    OSSL_LIB_CTX_free(PROV_LIBCTX_OF(provctx));
     ossl_prov_ctx_free(provctx);
 }
 
@@ -582,12 +484,12 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
                        void **provctx)
 {
     FIPS_GLOBAL *fgbl;
-    OPENSSL_CTX *libctx = NULL;
+    OSSL_LIB_CTX *libctx = NULL;
 
     for (; in->function_id != 0; in++) {
         switch (in->function_id) {
-        case OSSL_FUNC_CORE_GET_LIBRARY_CONTEXT:
-            c_get_libctx = OSSL_FUNC_core_get_library_context(in);
+        case OSSL_FUNC_CORE_GET_LIBCTX:
+            c_get_libctx = OSSL_FUNC_core_get_libctx(in);
             break;
         case OSSL_FUNC_CORE_GETTABLE_PARAMS:
             c_gettable_params = OSSL_FUNC_core_gettable_params(in);
@@ -692,20 +594,20 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 
     /*  Create a context. */
     if ((*provctx = ossl_prov_ctx_new()) == NULL
-        || (libctx = OPENSSL_CTX_new()) == NULL) {
+        || (libctx = OSSL_LIB_CTX_new()) == NULL) {
         /*
          * We free libctx separately here and only here because it hasn't
          * been attached to *provctx.  All other error paths below rely
          * solely on fips_teardown.
          */
-        OPENSSL_CTX_free(libctx);
+        OSSL_LIB_CTX_free(libctx);
         goto err;
     }
-    ossl_prov_ctx_set0_library_context(*provctx, libctx);
+    ossl_prov_ctx_set0_libctx(*provctx, libctx);
     ossl_prov_ctx_set0_handle(*provctx, handle);
 
-    if ((fgbl = openssl_ctx_get_data(libctx, OPENSSL_CTX_FIPS_PROV_INDEX,
-                                     &fips_prov_ossl_ctx_method)) == NULL)
+    if ((fgbl = ossl_lib_ctx_get_data(libctx, OSSL_LIB_CTX_FIPS_PROV_INDEX,
+                                      &fips_prov_ossl_ctx_method)) == NULL)
         goto err;
 
     fgbl->handle = handle;
@@ -740,12 +642,12 @@ int fips_intern_provider_init(const OSSL_CORE_HANDLE *handle,
                               const OSSL_DISPATCH **out,
                               void **provctx)
 {
-    OSSL_FUNC_core_get_library_context_fn *c_internal_get_libctx = NULL;
+    OSSL_FUNC_core_get_libctx_fn *c_internal_get_libctx = NULL;
 
     for (; in->function_id != 0; in++) {
         switch (in->function_id) {
-        case OSSL_FUNC_CORE_GET_LIBRARY_CONTEXT:
-            c_internal_get_libctx = OSSL_FUNC_core_get_library_context(in);
+        case OSSL_FUNC_CORE_GET_LIBCTX:
+            c_internal_get_libctx = OSSL_FUNC_core_get_libctx(in);
             break;
         default:
             break;
@@ -763,9 +665,8 @@ int fips_intern_provider_init(const OSSL_CORE_HANDLE *handle,
      * internal provider. This is not something that most providers would be
      * able to do.
      */
-    ossl_prov_ctx_set0_library_context(
-        *provctx, (OPENSSL_CTX *)c_internal_get_libctx(handle)
-    );
+    ossl_prov_ctx_set0_libctx(*provctx,
+                              (OSSL_LIB_CTX *)c_internal_get_libctx(handle));
     ossl_prov_ctx_set0_handle(*provctx, handle);
 
     *out = intern_dispatch_table;
@@ -814,15 +715,15 @@ int ERR_pop_to_mark(void)
 /*
  * This must take a library context, since it's called from the depths
  * of crypto/initthread.c code, where it's (correctly) assumed that the
- * passed caller argument is an OPENSSL_CTX pointer (since the same routine
+ * passed caller argument is an OSSL_LIB_CTX pointer (since the same routine
  * is also called from other parts of libcrypto, which all pass around a
- * OPENSSL_CTX pointer)
+ * OSSL_LIB_CTX pointer)
  */
-const OSSL_CORE_HANDLE *FIPS_get_core_handle(OPENSSL_CTX *libctx)
+const OSSL_CORE_HANDLE *FIPS_get_core_handle(OSSL_LIB_CTX *libctx)
 {
-    FIPS_GLOBAL *fgbl = openssl_ctx_get_data(libctx,
-                                             OPENSSL_CTX_FIPS_PROV_INDEX,
-                                             &fips_prov_ossl_ctx_method);
+    FIPS_GLOBAL *fgbl = ossl_lib_ctx_get_data(libctx,
+                                              OSSL_LIB_CTX_FIPS_PROV_INDEX,
+                                              &fips_prov_ossl_ctx_method);
 
     if (fgbl == NULL)
         return NULL;
@@ -902,7 +803,7 @@ int FIPS_security_check_enabled(void)
     return fips_security_checks;
 }
 
-void OSSL_SELF_TEST_get_callback(OPENSSL_CTX *libctx, OSSL_CALLBACK **cb,
+void OSSL_SELF_TEST_get_callback(OSSL_LIB_CTX *libctx, OSSL_CALLBACK **cb,
                                  void **cbarg)
 {
     if (libctx == NULL)

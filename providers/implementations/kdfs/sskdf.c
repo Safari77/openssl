@@ -246,7 +246,7 @@ static int SSKDF_mac_kdm(EVP_MAC_CTX *ctx_init,
     if (!EVP_MAC_init(ctx_init))
         goto end;
 
-    out_len = EVP_MAC_size(ctx_init); /* output size */
+    out_len = EVP_MAC_CTX_get_mac_size(ctx_init); /* output size */
     if (out_len <= 0)
         goto end;
     len = derived_key_len;
@@ -452,7 +452,7 @@ static int sskdf_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     const OSSL_PARAM *p;
     KDF_SSKDF *ctx = vctx;
-    OPENSSL_CTX *libctx = PROV_LIBRARY_CONTEXT_OF(ctx->provctx);
+    OSSL_LIB_CTX *libctx = PROV_LIBCTX_OF(ctx->provctx);
     size_t sz;
 
     if (!ossl_prov_digest_load_from_params(&ctx->digest, params, libctx))
