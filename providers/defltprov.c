@@ -204,6 +204,15 @@ static const OSSL_ALGORITHM_CAPABLE deflt_ciphers[] = {
         ossl_aes192wrappad_functions),
     ALG("AES-128-WRAP-PAD:id-aes128-wrap-pad:AES128-WRAP-PAD",
         ossl_aes128wrappad_functions),
+    ALG("AES-256-WRAP-INV:AES256-WRAP-INV", ossl_aes256wrapinv_functions),
+    ALG("AES-192-WRAP-INV:AES192-WRAP-INV", ossl_aes192wrapinv_functions),
+    ALG("AES-128-WRAP-INV:AES128-WRAP-INV", ossl_aes128wrapinv_functions),
+    ALG("AES-256-WRAP-PAD-INV:AES256-WRAP-PAD-INV",
+        ossl_aes256wrappadinv_functions),
+    ALG("AES-192-WRAP-PAD-INV:AES192-WRAP-PAD-INV",
+        ossl_aes192wrappadinv_functions),
+    ALG("AES-128-WRAP-PAD-INV:AES128-WRAP-PAD-INV",
+        ossl_aes128wrappadinv_functions),
     ALGC("AES-128-CBC-HMAC-SHA1", ossl_aes128cbc_hmac_sha1_functions,
          ossl_cipher_capable_aes_cbc_hmac_sha1),
     ALGC("AES-256-CBC-HMAC-SHA1", ossl_aes256cbc_hmac_sha1_functions,
@@ -364,8 +373,8 @@ static const OSSL_ALGORITHM deflt_signature[] = {
 #endif
     { "RSA:rsaEncryption", "provider=default", ossl_rsa_signature_functions },
 #ifndef OPENSSL_NO_EC
-    { "ED25519:Ed25519", "provider=default", ossl_ed25519_signature_functions },
-    { "ED448:Ed448", "provider=default", ossl_ed448_signature_functions },
+    { "ED25519", "provider=default", ossl_ed25519_signature_functions },
+    { "ED448", "provider=default", ossl_ed448_signature_functions },
     { "ECDSA", "provider=default", ecossl_dsa_signature_functions },
 # ifndef OPENSSL_NO_SM2
     { "SM2", "provider=default", sm2_signature_functions },

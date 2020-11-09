@@ -75,6 +75,14 @@
 /* Special indicator that the object is uniquely provider side */
 # define EVP_PKEY_KEYMGMT -1
 
+/* Easy to use macros for EVP_PKEY related selections */
+# define EVP_PKEY_KEY_PARAMETERS                                            \
+    ( OSSL_KEYMGMT_SELECT_ALL_PARAMETERS )
+# define EVP_PKEY_PUBLIC_KEY                                                \
+    ( EVP_PKEY_KEY_PARAMETERS | OSSL_KEYMGMT_SELECT_PUBLIC_KEY )
+# define EVP_PKEY_KEYPAIR                                                   \
+    ( EVP_PKEY_PUBLIC_KEY | OSSL_KEYMGMT_SELECT_PRIVATE_KEY )
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -312,6 +320,7 @@ DEPRECATEDIN_3_0(int (*EVP_CIPHER_meth_get_ctrl(const EVP_CIPHER *cipher))
 # define         EVP_CIPH_FLAG_CIPHER_WITH_MAC   0x2000000
 /* For supplementary wrap cipher support */
 # define         EVP_CIPH_FLAG_GET_WRAP_CIPHER   0x4000000
+# define         EVP_CIPH_FLAG_INVERSE_CIPHER    0x8000000
 
 /*
  * Cipher context flag to indicate we can handle wrap mode: if allowed in

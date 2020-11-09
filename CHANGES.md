@@ -23,6 +23,15 @@ OpenSSL 3.0
 
 ### Changes between 1.1.1 and 3.0 [xx XXX xxxx]
 
+ * Add support for AES Key Wrap inverse ciphers to the EVP layer.
+   The algorithms are:
+   "AES-128-WRAP-INV", "AES-192-WRAP-INV", "AES-256-WRAP-INV",
+   "AES-128-WRAP-PAD-INV", "AES-192-WRAP-PAD-INV" and "AES-256-WRAP-PAD-INV".
+   The inverse ciphers use AES decryption for wrapping, and
+   AES encryption for unwrapping.
+
+   *Shane Lontis*
+
  * Deprecated EVP_PKEY_set1_tls_encodedpoint() and
    EVP_PKEY_get1_tls_encodedpoint(). These functions were previously used by
    libssl to set or get an encoded public key in/from an EVP_PKEY object. With
@@ -822,6 +831,30 @@ OpenSSL 3.0
 
    *Richard Levitte*
 
+ * Added several checks to X509_verify_cert() according to requirements in
+   RFC 5280 in case `X509_V_FLAG_X509_STRICT` is set
+   (which may be done by using the CLI option `-x509_strict`):
+   * The basicConstraints of CA certificates must be marked critical.
+   * CA certificates must explicitly include the keyUsage extension.
+   * If a pathlenConstraint is given the key usage keyCertSign must be allowed.
+   * The issuer name of any certificate must not be empty.
+   * The subject name of CA certs, certs with keyUsage crlSign,
+     and certs without subjectAlternativeName must not be empty.
+   * If a subjectAlternativeName extension is given it must not be empty.
+   * The signatureAlgorithm field and the cert signature must be consistent.
+   * Any given authorityKeyIdentifier and any given subjectKeyIdentifier
+     must not be marked critical.
+   * The authorityKeyIdentifier must be given for X.509v3 certs
+     unless they are self-signed.
+   * The subjectKeyIdentifier must be given for all X.509v3 CA certs.
+
+   *David von Oheimb*
+
+ * Certificate verification using X509_verify_cert() meanwhile rejects EC keys
+   with explicit curve parameters (specifiedCurve) as required by RFC 5480.
+
+   *Tomas Mraz*
+
  * For built-in EC curves, ensure an EC_GROUP built from the curve name is
    used even when parsing explicit parameters, when loading a encoded key
    or calling `EC_GROUP_new_from_ecpkparameters()`/
@@ -1236,6 +1269,15 @@ OpenSSL 3.0
    when outputting them via `*ca` (rather than reversing it).
 
    *David von Oheimb*
+
+ * Deprecated pthread fork support methods. These were unused so no
+   replacement is required.
+
+   - OPENSSL_fork_prepare()
+   - OPENSSL_fork_parent()
+   - OPENSSL_fork_child()
+
+   *Randall S. Becker*
 
 OpenSSL 1.1.1
 -------------
