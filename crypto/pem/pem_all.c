@@ -45,7 +45,8 @@ IMPLEMENT_PEM_rw(PKCS7, PKCS7, PEM_STRING_PKCS7, PKCS7)
 
 IMPLEMENT_PEM_rw(NETSCAPE_CERT_SEQUENCE, NETSCAPE_CERT_SEQUENCE,
                  PEM_STRING_X509, NETSCAPE_CERT_SEQUENCE)
-#ifndef OPENSSL_NO_RSA
+#ifndef OPENSSL_NO_DEPRECATED_3_0
+# ifndef OPENSSL_NO_RSA
 /*
  * We treat RSA or DSA private keys as a special case. For private keys we
  * read in an EVP_PKEY structure with PEM_read_bio_PrivateKey() and extract
@@ -76,7 +77,7 @@ RSA *PEM_read_bio_RSAPrivateKey(BIO *bp, RSA **rsa, pem_password_cb *cb,
     return pkey_get_rsa(pktmp, rsa);
 }
 
-# ifndef OPENSSL_NO_STDIO
+#  ifndef OPENSSL_NO_STDIO
 
 RSA *PEM_read_RSAPrivateKey(FILE *fp, RSA **rsa, pem_password_cb *cb, void *u)
 {
@@ -85,11 +86,12 @@ RSA *PEM_read_RSAPrivateKey(FILE *fp, RSA **rsa, pem_password_cb *cb, void *u)
     return pkey_get_rsa(pktmp, rsa);
 }
 
-# endif
+#  endif
 
 IMPLEMENT_PEM_write_cb(RSAPrivateKey, RSA, PEM_STRING_RSA, RSAPrivateKey)
 IMPLEMENT_PEM_rw(RSAPublicKey, RSA, PEM_STRING_RSA_PUBLIC, RSAPublicKey)
 IMPLEMENT_PEM_rw(RSA_PUBKEY, RSA, PEM_STRING_PUBLIC, RSA_PUBKEY)
+# endif
 #endif
 #ifndef OPENSSL_NO_DSA
 static DSA *pkey_get_dsa(EVP_PKEY *key, DSA **dsa)
@@ -200,7 +202,7 @@ DH *PEM_read_bio_DHparams(BIO *bp, DH **x, pem_password_cb *cb, void *u)
         ret = d2i_DHparams(x, &p, len);
 
     if (ret == NULL)
-        PEMerr(PEM_F_PEM_READ_BIO_DHPARAMS, ERR_R_ASN1_LIB);
+        ERR_raise(ERR_LIB_PEM, ERR_R_ASN1_LIB);
     OPENSSL_free(nm);
     OPENSSL_free(data);
     return ret;
@@ -213,7 +215,7 @@ DH *PEM_read_DHparams(FILE *fp, DH **x, pem_password_cb *cb, void *u)
     DH *ret;
 
     if ((b = BIO_new(BIO_s_file())) == NULL) {
-        PEMerr(PEM_F_PEM_READ_DHPARAMS, ERR_R_BUF_LIB);
+        ERR_raise(ERR_LIB_PEM, ERR_R_BUF_LIB);
         return 0;
     }
     BIO_set_fp(b, fp, BIO_NOCLOSE);

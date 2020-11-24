@@ -381,7 +381,7 @@ IF[{- !$disabled{tests} -}]
   DEPEND[recordlentest]=../libcrypto ../libssl libtestutil.a
 
   SOURCE[drbgtest]=drbgtest.c
-  INCLUDE[drbgtest]=../include ../apps/include
+  INCLUDE[drbgtest]=../include ../apps/include ../providers/common/include
   DEPEND[drbgtest]=../libcrypto.a libtestutil.a
 
   SOURCE[rand_status_test]=rand_status_test.c
@@ -792,6 +792,11 @@ IF[{- !$disabled{tests} -}]
   SOURCE[endecode_test]=endecode_test.c
   INCLUDE[endecode_test]=.. ../include ../apps/include
   DEPEND[endecode_test]=../libcrypto.a libtestutil.a
+
+  PROGRAMS{noinst}=endecoder_legacy_test
+  SOURCE[endecoder_legacy_test]=endecoder_legacy_test.c
+  INCLUDE[endecoder_legacy_test]=.. ../include ../apps/include
+  DEPEND[endecoder_legacy_test]=../libcrypto.a libtestutil.a
 
   PROGRAMS{noinst}=namemap_internal_test
   SOURCE[namemap_internal_test]=namemap_internal_test.c

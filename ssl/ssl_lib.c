@@ -656,7 +656,7 @@ int SSL_CTX_set_ssl_version(SSL_CTX *ctx, const SSL_METHOD *meth)
         ERR_raise(ERR_LIB_SSL, SSL_R_SSL_LIBRARY_HAS_NO_CIPHERS);
         return 0;
     }
-    sk = ssl_create_cipher_list(ctx->method,
+    sk = ssl_create_cipher_list(ctx,
                                 ctx->tls13_ciphersuites,
                                 &(ctx->cipher_list),
                                 &(ctx->cipher_list_by_id),
@@ -2701,7 +2701,7 @@ int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str)
 {
     STACK_OF(SSL_CIPHER) *sk;
 
-    sk = ssl_create_cipher_list(ctx->method, ctx->tls13_ciphersuites,
+    sk = ssl_create_cipher_list(ctx, ctx->tls13_ciphersuites,
                                 &ctx->cipher_list, &ctx->cipher_list_by_id, str,
                                 ctx->cert);
     /*
@@ -2725,7 +2725,7 @@ int SSL_set_cipher_list(SSL *s, const char *str)
 {
     STACK_OF(SSL_CIPHER) *sk;
 
-    sk = ssl_create_cipher_list(s->ctx->method, s->tls13_ciphersuites,
+    sk = ssl_create_cipher_list(s->ctx, s->tls13_ciphersuites,
                                 &s->cipher_list, &s->cipher_list_by_id, str,
                                 s->cert);
     /* see comment in SSL_CTX_set_cipher_list */
@@ -3190,7 +3190,7 @@ SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
     if (!SSL_CTX_set_ciphersuites(ret, OSSL_default_ciphersuites()))
         goto err;
 
-    if (!ssl_create_cipher_list(ret->method,
+    if (!ssl_create_cipher_list(ret,
                                 ret->tls13_ciphersuites,
                                 &ret->cipher_list, &ret->cipher_list_by_id,
                                 OSSL_default_cipher_list(), ret->cert)
@@ -3504,11 +3504,11 @@ void ssl_set_masks(SSL *s)
     if (c == NULL)
         return;
 
+    dh_tmp = (c->dh_tmp != NULL
 #ifndef OPENSSL_NO_DH
-    dh_tmp = (c->dh_tmp != NULL || c->dh_tmp_cb != NULL || c->dh_tmp_auto);
-#else
-    dh_tmp = 0;
+              || c->dh_tmp_cb != NULL
 #endif
+              || c->dh_tmp_auto);
 
     rsa_enc = pvalid[SSL_PKEY_RSA] & CERT_PKEY_VALID;
     rsa_sign = pvalid[SSL_PKEY_RSA] & CERT_PKEY_VALID;
@@ -4487,7 +4487,7 @@ int SSL_want(const SSL *s)
  * \param dh the callback
  */
 
-#ifndef OPENSSL_NO_DH
+#if !defined(OPENSSL_NO_DH) && !defined(OPENSSL_NO_DEPRECATED_3_0)
 void SSL_CTX_set_tmp_dh_callback(SSL_CTX *ctx,
                                  DH *(*dh) (SSL *ssl, int is_export,
                                             int keylength))
@@ -5954,4 +5954,30 @@ void ssl_evp_md_free(const EVP_MD *md)
          */
         EVP_MD_free((EVP_MD *)md);
     }
+}
+
+int SSL_set0_tmp_dh_pkey(SSL *s, EVP_PKEY *dhpkey)
+{
+    if (!ssl_security(s, SSL_SECOP_TMP_DH,
+                      EVP_PKEY_security_bits(dhpkey), 0, dhpkey)) {
+        ERR_raise(ERR_LIB_SSL, SSL_R_DH_KEY_TOO_SMALL);
+        EVP_PKEY_free(dhpkey);
+        return 0;
+    }
+    EVP_PKEY_free(s->cert->dh_tmp);
+    s->cert->dh_tmp = dhpkey;
+    return 1;
+}
+
+int SSL_CTX_set0_tmp_dh_pkey(SSL_CTX *ctx, EVP_PKEY *dhpkey)
+{
+    if (!ssl_ctx_security(ctx, SSL_SECOP_TMP_DH,
+                          EVP_PKEY_security_bits(dhpkey), 0, dhpkey)) {
+        ERR_raise(ERR_LIB_SSL, SSL_R_DH_KEY_TOO_SMALL);
+        EVP_PKEY_free(dhpkey);
+        return 0;
+    }
+    EVP_PKEY_free(ctx->cert->dh_tmp);
+    ctx->cert->dh_tmp = dhpkey;
+    return 1;
 }

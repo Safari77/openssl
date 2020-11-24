@@ -19,6 +19,7 @@
 #include <openssl/dh.h>
 #include <openssl/bn.h>
 #include <openssl/provider.h>
+#include <openssl/param_build.h>
 #include "internal/nelem.h"
 #include "internal/evp.h"
 #include "internal/tlsgroups.h"
@@ -2049,7 +2050,7 @@ static int tls12_sigalg_allowed(const SSL *s, int op, const SIGALG_LOOKUP *lu)
         return 0;
 
     /* See if public key algorithm allowed */
-    if (ssl_cert_is_disabled(lu->sig_idx))
+    if (ssl_cert_is_disabled(s->ctx, lu->sig_idx))
         return 0;
 
     if (lu->sig == NID_id_GostR3410_2012_256
@@ -2306,7 +2307,7 @@ int tls1_process_sigalgs(SSL *s)
         if (SSL_IS_TLS13(s) && sigptr->sig == EVP_PKEY_RSA)
             continue;
         /* If not disabled indicate we can explicitly sign */
-        if (pvalid[idx] == 0 && !ssl_cert_is_disabled(idx))
+        if (pvalid[idx] == 0 && !ssl_cert_is_disabled(s->ctx, idx))
             pvalid[idx] = CERT_PKEY_EXPLICIT_SIGN | CERT_PKEY_SIGN;
     }
     return 1;
@@ -2873,12 +2874,15 @@ int SSL_check_chain(SSL *s, X509 *x, EVP_PKEY *pk, STACK_OF(X509) *chain)
     return tls1_check_chain(s, x, pk, chain, -1);
 }
 
-#ifndef OPENSSL_NO_DH
-DH *ssl_get_auto_dh(SSL *s)
+EVP_PKEY *ssl_get_auto_dh(SSL *s)
 {
-    DH *dhp;
-    BIGNUM *p, *g;
+    EVP_PKEY *dhp = NULL;
+    BIGNUM *p;
     int dh_secbits = 80;
+    EVP_PKEY_CTX *pctx = NULL;
+    OSSL_PARAM_BLD *tmpl = NULL;
+    OSSL_PARAM *params = NULL;
+
     if (s->cert->dh_tmp_auto != 2) {
         if (s->s3.tmp.new_cipher->algorithm_auth & (SSL_aNULL | SSL_aPSK)) {
             if (s->s3.tmp.new_cipher->strength_bits == 256)
@@ -2892,15 +2896,6 @@ DH *ssl_get_auto_dh(SSL *s)
         }
     }
 
-    dhp = DH_new();
-    if (dhp == NULL)
-        return NULL;
-    g = BN_new();
-    if (g == NULL || !BN_set_word(g, 2)) {
-        DH_free(dhp);
-        BN_free(g);
-        return NULL;
-    }
     if (dh_secbits >= 192)
         p = BN_get_rfc3526_prime_8192(NULL);
     else if (dh_secbits >= 152)
@@ -2911,15 +2906,31 @@ DH *ssl_get_auto_dh(SSL *s)
         p = BN_get_rfc3526_prime_2048(NULL);
     else
         p = BN_get_rfc2409_prime_1024(NULL);
-    if (p == NULL || !DH_set0_pqg(dhp, p, NULL, g)) {
-        DH_free(dhp);
-        BN_free(p);
-        BN_free(g);
-        return NULL;
-    }
+    if (p == NULL)
+        goto err;
+
+    pctx = EVP_PKEY_CTX_new_from_name(s->ctx->libctx, "DH", s->ctx->propq);
+    if (pctx == NULL
+            || EVP_PKEY_key_fromdata_init(pctx) != 1)
+        goto err;
+
+    tmpl = OSSL_PARAM_BLD_new();
+    if (tmpl == NULL
+            || !OSSL_PARAM_BLD_push_BN(tmpl, OSSL_PKEY_PARAM_FFC_P, p)
+            || !OSSL_PARAM_BLD_push_uint(tmpl, OSSL_PKEY_PARAM_FFC_G, 2))
+        goto err;
+
+    params = OSSL_PARAM_BLD_to_param(tmpl);
+    if (params == NULL || EVP_PKEY_fromdata(pctx, &dhp, params) != 1)
+        goto err;
+
+err:
+    OSSL_PARAM_BLD_free_params(params);
+    OSSL_PARAM_BLD_free(tmpl);
+    EVP_PKEY_CTX_free(pctx);
+    BN_free(p);
     return dhp;
 }
-#endif
 
 static int ssl_security_cert_key(SSL *s, SSL_CTX *ctx, X509 *x, int op)
 {
