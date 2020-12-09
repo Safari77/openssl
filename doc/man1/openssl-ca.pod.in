@@ -33,7 +33,7 @@ B<openssl> B<ca>
 [B<-days> I<arg>]
 [B<-md> I<arg>]
 [B<-policy> I<arg>]
-[B<-keyfile> I<arg>]
+[B<-keyfile> I<filename>|I<uri>]
 [B<-keyform> B<DER>|B<PEM>|B<P12>|B<ENGINE>]
 [B<-key> I<arg>]
 [B<-passin> I<arg>]
@@ -148,7 +148,7 @@ The CA certificate, which must match with B<-keyfile>.
 The format of the data in certificate input files.
 This option has no effect and is retained for backward compatibility only.
 
-=item B<-keyfile> I<filename>
+=item B<-keyfile> I<filename>|I<uri>
 
 The CA private key to sign requests with. This must match with B<-cert>.
 
@@ -156,7 +156,7 @@ The CA private key to sign requests with. This must match with B<-cert>.
 
 The format of the private key input file; the default is B<PEM>.
 The only value with effect is B<ENGINE>; all others have become obsolete.
-See L<openssl(1)/Format Options> for details.
+See L<openssl-format-options(1)/Format Options> for details.
 
 =item B<-sigopt> I<nm>:I<v>
 
@@ -186,7 +186,7 @@ Better use B<-passin>.
 
 The key password source for key files and certificate PKCS#12 files.
 For more information about the format of B<arg>
-see L<openssl(1)/Pass Phrase Options>.
+see L<openssl-passphrase-options(1)/Pass Phrase Options>.
 
 =item B<-selfsign>
 
