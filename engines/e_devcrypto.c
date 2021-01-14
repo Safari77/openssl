@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -1236,9 +1236,11 @@ static int open_devcrypto(void)
 #ifdef CRIOGET
     if (ioctl(fd, CRIOGET, &cfd) < 0) {
         fprintf(stderr, "Could not create crypto fd: %s\n", strerror(errno));
+        close(fd);
         cfd = -1;
         return 0;
     }
+    close(fd);
 #else
     cfd = fd;
 #endif
