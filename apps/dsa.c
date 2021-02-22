@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -260,8 +260,8 @@ int dsa_main(int argc, char **argv)
     }
 
     /* Perform the encoding */
-    ectx = OSSL_ENCODER_CTX_new_by_EVP_PKEY(pkey, selection, output_type,
-                                            output_structure, NULL);
+    ectx = OSSL_ENCODER_CTX_new_for_pkey(pkey, selection, output_type,
+                                         output_structure, NULL);
     if (OSSL_ENCODER_CTX_get_num_encoders(ectx) == 0) {
         BIO_printf(bio_err, "%s format not supported\n", output_type);
         goto end;

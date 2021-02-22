@@ -1,5 +1,5 @@
 #
-# Copyright 2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -11,6 +11,22 @@
 #       PrivPubKeyPair Sign Verify VerifyRecover
 # and continue until a blank line.  Lines starting with a pound sign,
 # like this prolog, are ignored.
+
+# Test vector from NISTs CAVP tool
+
+Title = CAVP Large Seed
+
+RAND = CTR-DRBG
+Cipher = AES-192-CTR
+DerivationFunction = 1
+PredictionResistance = 1
+GenerateBits = 256
+Entropy.0 = 22ED7A66C9E9F494C8D2B8F81D0D49BCDD0C03863FF5979212211EFE3E945758B6228CDD9E9EEC5F7984AEF7212699F3
+Nonce.0 = 5BF245B95F8E1377D5A17EB331AABCD9
+EntropyPredictionResistanceA.0 = C0535ACD3D715A0B1453AB3447D53D9131C939AEE1D9CA24A75B285CF58D79403A4111E2F3DEE011154D31D646D93001
+EntropyPredictionResistanceB.0 = 9FBC48890273FCAFCA1904B6486D1877CAD91EB601E979259506F93BA462AC17D8676C570B2231D4D98EC617C4826573
+Output.0 = 19CED57563D065B606DA27DD5E8DE83B93BB7C8F8B02D0288F475550C3F44B77
+
 
 # Test vectors come from:
 # https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/drbg/drbgtestvectors.zip

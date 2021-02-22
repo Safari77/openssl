@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -219,10 +219,10 @@ static int test_print_key_type_using_encoder(const char *alg, int type,
 
     /* Make a context, it's valid for several prints */
     TEST_note("Setting up a OSSL_ENCODER context with passphrase");
-    if (!TEST_ptr(ctx = OSSL_ENCODER_CTX_new_by_EVP_PKEY(pk, selection,
-                                                         output_type,
-                                                         output_structure,
-                                                         NULL))
+    if (!TEST_ptr(ctx = OSSL_ENCODER_CTX_new_for_pkey(pk, selection,
+                                                      output_type,
+                                                      output_structure,
+                                                      NULL))
         /* Check that this operation is supported */
         || !TEST_int_ne(OSSL_ENCODER_CTX_get_num_encoders(ctx), 0))
         goto err;

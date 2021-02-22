@@ -281,7 +281,7 @@ int X509_verify_cert(X509_STORE_CTX *ctx)
         return -1;
     }
 
-    if (!X509_add_cert_new(&ctx->chain, ctx->cert, X509_ADD_FLAG_UP_REF)) {
+    if (!ossl_x509_add_cert_new(&ctx->chain, ctx->cert, X509_ADD_FLAG_UP_REF)) {
         ctx->error = X509_V_ERR_OUT_OF_MEM;
         return -1;
     }
@@ -352,7 +352,7 @@ static int check_issued(ossl_unused X509_STORE_CTX *ctx, X509 *x, X509 *issuer)
      */
     if (err != X509_V_ERR_SUBJECT_ISSUER_MISMATCH)
         ctx->error = err;
-    return 0; /* Better call verify_cb_cert(ctx, x, ctx->error_depth, err) ? */
+    return 0;
 }
 
 /*
@@ -3035,12 +3035,9 @@ static int build_chain(X509_STORE_CTX *ctx)
      * If we got any "DANE-TA(2) Cert(0) Full(0)" trust anchors from DNS, add
      * them to our working copy of the untrusted certificate stack.
      */
-    if (DANETLS_ENABLED(dane) && dane->certs != NULL) {
-        if (!X509_add_certs(sk_untrusted, dane->certs, X509_ADD_FLAG_DEFAULT)) {
-            sk_X509_free(sk_untrusted);
-            goto memerr;
-        }
-    }
+    if (DANETLS_ENABLED(dane) && dane->certs != NULL
+        && !X509_add_certs(sk_untrusted, dane->certs, X509_ADD_FLAG_DEFAULT))
+        goto memerr;
 
     /*
      * Still absurdly large, but arithmetically safe, a lower hard upper bound
@@ -3285,10 +3282,17 @@ static int build_chain(X509_STORE_CTX *ctx)
         return 0;
     case X509_TRUST_UNTRUSTED:
     default:
-        if (ctx->error != X509_V_OK)
-            /* Callback already issued in most such cases */
-            return 0;
-        num = sk_X509_num(ctx->chain);
+        switch(ctx->error) {
+        case X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD:
+        case X509_V_ERR_CERT_NOT_YET_VALID:
+        case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
+        case X509_V_ERR_CERT_HAS_EXPIRED:
+            return 0; /* Callback already issued by x509_check_cert_time() */
+        default: /* A preliminary error has become final */
+            return verify_cb_cert(ctx, NULL, num - 1, ctx->error);
+        case X509_V_OK:
+            break;
+        }
         CB_FAIL_IF(num > depth,
                    ctx, NULL, num - 1, X509_V_ERR_CERT_CHAIN_TOO_LONG);
         CB_FAIL_IF(DANETLS_ENABLED(dane)
@@ -3306,14 +3310,15 @@ static int build_chain(X509_STORE_CTX *ctx)
     }
 
  int_err:
-    sk_X509_free(sk_untrusted);
     ERR_raise(ERR_LIB_X509, ERR_R_INTERNAL_ERROR);
     ctx->error = X509_V_ERR_UNSPECIFIED;
+    sk_X509_free(sk_untrusted);
     return -1;
 
  memerr:
     ERR_raise(ERR_LIB_X509, ERR_R_MALLOC_FAILURE);
     ctx->error = X509_V_ERR_OUT_OF_MEM;
+    sk_X509_free(sk_untrusted);
     return -1;
 }
 

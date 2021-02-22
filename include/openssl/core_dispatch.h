@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -41,10 +41,12 @@ extern "C" {
  * |type| is the return-type of the function, |name| is the name of the
  * function to fetch, and |args| is a parenthesized list of parameters
  * for the function (that is, it is |name|'s function signature).
+ * Note: This is considered a "reserved" internal macro. Applications should
+ * not use this or assume its existence.
  */
 #define OSSL_CORE_MAKE_FUNC(type,name,args)                             \
     typedef type (OSSL_FUNC_##name##_fn)args;                           \
-    static ossl_inline \
+    static ossl_unused ossl_inline \
     OSSL_FUNC_##name##_fn *OSSL_FUNC_##name(const OSSL_DISPATCH *opf)   \
     {                                                                   \
         return (OSSL_FUNC_##name##_fn *)opf->function;                  \
@@ -399,6 +401,8 @@ OSSL_CORE_MAKE_FUNC(int, kdf_set_ctx_params,
 # define OSSL_FUNC_RAND_GET_CTX_PARAMS               15
 # define OSSL_FUNC_RAND_SET_CTX_PARAMS               16
 # define OSSL_FUNC_RAND_VERIFY_ZEROIZATION           17
+# define OSSL_FUNC_RAND_GET_SEED                     18
+# define OSSL_FUNC_RAND_CLEAR_SEED                   19
 
 OSSL_CORE_MAKE_FUNC(void *,rand_newctx,
                     (void *provctx, void *parent,
@@ -440,6 +444,13 @@ OSSL_CORE_MAKE_FUNC(void,rand_set_callbacks,
                      OSSL_CALLBACK *cleanup_nonce, void *arg))
 OSSL_CORE_MAKE_FUNC(int,rand_verify_zeroization,
                     (void *vctx))
+OSSL_CORE_MAKE_FUNC(size_t,rand_get_seed,
+                    (void *vctx, unsigned char **buffer,
+                     int entropy, size_t min_len, size_t max_len,
+                     int prediction_resistance,
+                     const unsigned char *adin, size_t adin_len))
+OSSL_CORE_MAKE_FUNC(void,rand_clear_seed,
+                    (void *vctx, unsigned char *buffer, size_t b_len))
 
 /*-
  * Key management
