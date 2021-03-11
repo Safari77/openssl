@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -117,7 +117,7 @@ int EVP_PKEY_encapsulate(EVP_PKEY_CTX *ctx,
         return 0;
 
     if (ctx->operation != EVP_PKEY_OP_ENCAPSULATE) {
-        ERR_raise(ERR_LIB_EVP, EVP_R_OPERATON_NOT_INITIALIZED);
+        ERR_raise(ERR_LIB_EVP, EVP_R_OPERATION_NOT_INITIALIZED);
         return -1;
     }
 
@@ -148,7 +148,7 @@ int EVP_PKEY_decapsulate(EVP_PKEY_CTX *ctx,
         return 0;
 
     if (ctx->operation != EVP_PKEY_OP_DECAPSULATE) {
-        ERR_raise(ERR_LIB_EVP, EVP_R_OPERATON_NOT_INITIALIZED);
+        ERR_raise(ERR_LIB_EVP, EVP_R_OPERATION_NOT_INITIALIZED);
         return -1;
     }
 
