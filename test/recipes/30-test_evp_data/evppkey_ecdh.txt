@@ -1,5 +1,5 @@
 #
-# Copyright 2001-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2001-2024 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -138,7 +138,6 @@ Ny3Ep0GVYms=
 -----END PUBLIC KEY-----
 
 PrivPubKeyPair = BOB_secp128r1:BOB_secp128r1_PUB
-
 
 # ECDH Alice with Bob peer
 
@@ -948,12 +947,14 @@ PrivPubKeyPair = BOB_sect163r1:BOB_sect163r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein=default
 Derive=ALICE_sect163r1
 PeerKey=BOB_sect163r1_PUB
 SharedSecret=02355c765bbc07fcc44bb1496e490912f6df56e6d4
 
 # ECDH Bob with Alice peer
 
+Availablein=default
 Derive=BOB_sect163r1
 PeerKey=ALICE_sect163r1_PUB
 SharedSecret=02355c765bbc07fcc44bb1496e490912f6df56e6d4
@@ -994,12 +995,14 @@ PrivPubKeyPair = BOB_sect193r1:BOB_sect193r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein=default
 Derive=ALICE_sect193r1
 PeerKey=BOB_sect193r1_PUB
 SharedSecret=00458b4c5ad122de5a377bea0adf1ab87bcb961b24ed764f47
 
 # ECDH Bob with Alice peer
 
+Availablein=default
 Derive=BOB_sect193r1
 PeerKey=ALICE_sect193r1_PUB
 SharedSecret=00458b4c5ad122de5a377bea0adf1ab87bcb961b24ed764f47
@@ -1040,12 +1043,14 @@ PrivPubKeyPair = BOB_sect193r2:BOB_sect193r2_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein=default
 Derive=ALICE_sect193r2
 PeerKey=BOB_sect193r2_PUB
 SharedSecret=019d1f316d204a9cd1b9632cebb4accddb204158be3e435891
 
 # ECDH Bob with Alice peer
 
+Availablein=default
 Derive=BOB_sect193r2
 PeerKey=ALICE_sect193r2_PUB
 SharedSecret=019d1f316d204a9cd1b9632cebb4accddb204158be3e435891
@@ -1086,12 +1091,14 @@ PrivPubKeyPair = BOB_sect239k1:BOB_sect239k1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein=default
 Derive=ALICE_sect239k1
 PeerKey=BOB_sect239k1_PUB
 SharedSecret=4d1c9a8ae73f754d0a593d6e426114f4f67d7c8082ccc4e04a72b0d2aff8
 
 # ECDH Bob with Alice peer
 
+Availablein=default
 Derive=BOB_sect239k1
 PeerKey=ALICE_sect239k1_PUB
 SharedSecret=4d1c9a8ae73f754d0a593d6e426114f4f67d7c8082ccc4e04a72b0d2aff8
@@ -2703,7 +2710,7 @@ Availablein = fips
 Derive=ALICE_prime192v1
 Securitycheck = 1
 PeerKey=BOB_prime192v1_PUB
-Result = DERIVE_SET_PEER_ERROR
+Result = KEYOP_INIT_ERROR
 
 # ECDH Bob with Alice peer
 
@@ -2889,12 +2896,14 @@ PrivPubKeyPair = BOB_sect233k1:BOB_sect233k1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect233k1
 PeerKey=BOB_sect233k1_PUB
 SharedSecret=00a5e5f2e992f4360d530dd365d14f5c6013212e14f4ea258c91c71f1512
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect233k1
 PeerKey=ALICE_sect233k1_PUB
 SharedSecret=00a5e5f2e992f4360d530dd365d14f5c6013212e14f4ea258c91c71f1512
@@ -2935,12 +2944,14 @@ PrivPubKeyPair = BOB_sect233r1:BOB_sect233r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect233r1
 PeerKey=BOB_sect233r1_PUB
 SharedSecret=01625f3fcd367ee7cd74c67cca02dccfce6c3b19ef07e358ed943d17a8e2
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect233r1
 PeerKey=ALICE_sect233r1_PUB
 SharedSecret=01625f3fcd367ee7cd74c67cca02dccfce6c3b19ef07e358ed943d17a8e2
@@ -2983,12 +2994,14 @@ PrivPubKeyPair = BOB_sect283k1:BOB_sect283k1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect283k1
 PeerKey=BOB_sect283k1_PUB
 SharedSecret=02f2e682c2f60d7261624f3661a5e85fca920443b72aa4dd5a540082e65e552302d8f825
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect283k1
 PeerKey=ALICE_sect283k1_PUB
 SharedSecret=02f2e682c2f60d7261624f3661a5e85fca920443b72aa4dd5a540082e65e552302d8f825
@@ -3031,12 +3044,14 @@ PrivPubKeyPair = BOB_sect283r1:BOB_sect283r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect283r1
 PeerKey=BOB_sect283r1_PUB
 SharedSecret=05778bc1afcf38d7dddb2150cacbfe4d38dc588968fd8b2e859c28ae2629d3435f89f6cc
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect283r1
 PeerKey=ALICE_sect283r1_PUB
 SharedSecret=05778bc1afcf38d7dddb2150cacbfe4d38dc588968fd8b2e859c28ae2629d3435f89f6cc
@@ -3083,12 +3098,14 @@ PrivPubKeyPair = BOB_sect409k1:BOB_sect409k1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect409k1
 PeerKey=BOB_sect409k1_PUB
 SharedSecret=01523ec40ad40226a57281a4c423801ae9495dcf736eddd667023b1390977d018ce79313fb99c503f39cbee80f5c1968f3bd02e0
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect409k1
 PeerKey=ALICE_sect409k1_PUB
 SharedSecret=01523ec40ad40226a57281a4c423801ae9495dcf736eddd667023b1390977d018ce79313fb99c503f39cbee80f5c1968f3bd02e0
@@ -3135,12 +3152,14 @@ PrivPubKeyPair = BOB_sect409r1:BOB_sect409r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect409r1
 PeerKey=BOB_sect409r1_PUB
 SharedSecret=019dc849870dc6f79978aca8e1fc6aa6836c8fcb25bbfe3d5ab41ea53eae2c7329952280efb30f9097a31a774191e476dbd842d5
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect409r1
 PeerKey=ALICE_sect409r1_PUB
 SharedSecret=019dc849870dc6f79978aca8e1fc6aa6836c8fcb25bbfe3d5ab41ea53eae2c7329952280efb30f9097a31a774191e476dbd842d5
@@ -3191,12 +3210,14 @@ PrivPubKeyPair = BOB_sect571k1:BOB_sect571k1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect571k1
 PeerKey=BOB_sect571k1_PUB
 SharedSecret=05a423515fcc91b3171c83edd5c4085ff729a8ff0a3fa1578ebf769523ded0f5c1e387cf63109f2fbd95e117345b788b4577fdc6b6e727230bfc73eae0d4e851cb6f6e616eddb13e
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect571k1
 PeerKey=ALICE_sect571k1_PUB
 SharedSecret=05a423515fcc91b3171c83edd5c4085ff729a8ff0a3fa1578ebf769523ded0f5c1e387cf63109f2fbd95e117345b788b4577fdc6b6e727230bfc73eae0d4e851cb6f6e616eddb13e
@@ -3247,12 +3268,14 @@ PrivPubKeyPair = BOB_sect571r1:BOB_sect571r1_PUB
 
 # ECDH Alice with Bob peer
 
+Availablein = default
 Derive=ALICE_sect571r1
 PeerKey=BOB_sect571r1_PUB
 SharedSecret=004b397e564055e2c7d87648183c948655ccb0ebb20bd441f9b11635cf461cb5815ff060eab33091b9f7aed67bec8ba1bb7b22437ece3c92c7cf76124408fb951595dfb4a512b2ae
 
 # ECDH Bob with Alice peer
 
+Availablein = default
 Derive=BOB_sect571r1
 PeerKey=ALICE_sect571r1_PUB
 SharedSecret=004b397e564055e2c7d87648183c948655ccb0ebb20bd441f9b11635cf461cb5815ff060eab33091b9f7aed67bec8ba1bb7b22437ece3c92c7cf76124408fb951595dfb4a512b2ae
@@ -3609,3 +3632,11 @@ SharedSecret=01144C7D79AE6956BC8EDB8E7C787C4521CB086FA64407F97894E5E6B2D79B04D14
 Derive=SECP521R1_RFC5903-Peer
 PeerKey=SECP521R1_RFC5903-PUBLIC
 SharedSecret=01144C7D79AE6956BC8EDB8E7C787C4521CB086FA64407F97894E5E6B2D79B04D1427E73CA4BAA240A34786859810C06B3C715A3A8CC3151F2BEE417996D19F3DDEA
+
+Title = ECDH negative tests (with random keys)
+
+# ECDH Alice with BOB peer - mismatching curves.
+Availablein = default
+Derive=ALICE_secp112r1
+PeerKeyValidate=BOB_secp128r1_PUB
+Result = DERIVE_SET_PEER_ERROR

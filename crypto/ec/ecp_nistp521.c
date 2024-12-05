@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2011-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -43,11 +43,9 @@
 #include <openssl/err.h>
 #include "ec_local.h"
 
-#if defined(__SIZEOF_INT128__) && __SIZEOF_INT128__==16
-  /* even with gcc, the typedef won't work for 32-bit platforms */
-typedef __uint128_t uint128_t;  /* nonstandard; implemented by gcc on 64-bit
-                                 * platforms */
-#else
+#include "internal/numbers.h"
+
+#ifndef INT128_MAX
 # error "Your compiler doesn't appear to support 128-bit integer types"
 #endif
 
@@ -403,7 +401,7 @@ static void felem_diff128(largefelem out, const largefelem in)
  * On exit:
  *   out[i] < 17 * max(in[i]) * max(in[i])
  */
-static void felem_square(largefelem out, const felem in)
+static void felem_square_ref(largefelem out, const felem in)
 {
     felem inx2, inx4;
     felem_scalar(inx2, in, 2);
@@ -487,7 +485,7 @@ static void felem_square(largefelem out, const felem in)
  * On exit:
  *   out[i] < 17 * max(in1[i]) * max(in2[i])
  */
-static void felem_mul(largefelem out, const felem in1, const felem in2)
+static void felem_mul_ref(largefelem out, const felem in1, const felem in2)
 {
     felem in2x2;
     felem_scalar(in2x2, in2, 2);
@@ -677,6 +675,57 @@ static void felem_reduce(felem out, const largefelem in)
      */
 }
 
+#if defined(ECP_NISTP521_ASM)
+static void felem_square_wrapper(largefelem out, const felem in);
+static void felem_mul_wrapper(largefelem out, const felem in1, const felem in2);
+
+static void (*felem_square_p)(largefelem out, const felem in) =
+    felem_square_wrapper;
+static void (*felem_mul_p)(largefelem out, const felem in1, const felem in2) =
+    felem_mul_wrapper;
+
+void p521_felem_square(largefelem out, const felem in);
+void p521_felem_mul(largefelem out, const felem in1, const felem in2);
+
+# if defined(_ARCH_PPC64)
+#  include "crypto/ppc_arch.h"
+# endif
+
+static void felem_select(void)
+{
+# if defined(_ARCH_PPC64)
+    if ((OPENSSL_ppccap_P & PPC_MADD300) && (OPENSSL_ppccap_P & PPC_ALTIVEC)) {
+        felem_square_p = p521_felem_square;
+        felem_mul_p = p521_felem_mul;
+
+        return;
+    }
+# endif
+
+    /* Default */
+    felem_square_p = felem_square_ref;
+    felem_mul_p = felem_mul_ref;
+}
+
+static void felem_square_wrapper(largefelem out, const felem in)
+{
+    felem_select();
+    felem_square_p(out, in);
+}
+
+static void felem_mul_wrapper(largefelem out, const felem in1, const felem in2)
+{
+    felem_select();
+    felem_mul_p(out, in1, in2);
+}
+
+# define felem_square felem_square_p
+# define felem_mul felem_mul_p
+#else
+# define felem_square felem_square_ref
+# define felem_mul felem_mul_ref
+#endif
+
 static void felem_square_reduce(felem out, const felem in)
 {
     largefelem tmp;
@@ -733,7 +782,6 @@ static void felem_inv(felem out, const felem in)
     felem_reduce(ftmp3, tmp);   /* 2^7 - 2^3 */
     felem_square(tmp, ftmp3);
     felem_reduce(ftmp3, tmp);   /* 2^8 - 2^4 */
-    felem_assign(ftmp4, ftmp3);
     felem_mul(tmp, ftmp3, ftmp);
     felem_reduce(ftmp4, tmp);   /* 2^8 - 2^1 */
     felem_square(tmp, ftmp4);
@@ -794,9 +842,9 @@ static void felem_inv(felem out, const felem in)
         felem_reduce(ftmp3, tmp); /* 2^521 - 2^9 */
     }
     felem_mul(tmp, ftmp3, ftmp4);
-    felem_reduce(ftmp3, tmp);   /* 2^512 - 2^2 */
+    felem_reduce(ftmp3, tmp);   /* 2^521 - 2^2 */
     felem_mul(tmp, ftmp3, in);
-    felem_reduce(out, tmp);     /* 2^512 - 3 */
+    felem_reduce(out, tmp);     /* 2^521 - 3 */
 }
 
 /* This is 2^521-1, expressed as an felem */
@@ -1617,7 +1665,6 @@ static void batch_mul(felem x_out, felem y_out, felem z_out,
 struct nistp521_pre_comp_st {
     felem g_pre_comp[16][3];
     CRYPTO_REF_COUNT references;
-    CRYPTO_RWLOCK *lock;
 };
 
 const EC_METHOD *EC_GFp_nistp521_method(void)
@@ -1693,16 +1740,10 @@ static NISTP521_PRE_COMP *nistp521_pre_comp_new(void)
 {
     NISTP521_PRE_COMP *ret = OPENSSL_zalloc(sizeof(*ret));
 
-    if (ret == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
+    if (ret == NULL)
         return ret;
-    }
 
-    ret->references = 1;
-
-    ret->lock = CRYPTO_THREAD_lock_new();
-    if (ret->lock == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
+    if (!CRYPTO_NEW_REF(&ret->references, 1)) {
         OPENSSL_free(ret);
         return NULL;
     }
@@ -1713,7 +1754,7 @@ NISTP521_PRE_COMP *EC_nistp521_pre_comp_dup(NISTP521_PRE_COMP *p)
 {
     int i;
     if (p != NULL)
-        CRYPTO_UP_REF(&p->references, &i, p->lock);
+        CRYPTO_UP_REF(&p->references, &i);
     return p;
 }
 
@@ -1724,13 +1765,13 @@ void EC_nistp521_pre_comp_free(NISTP521_PRE_COMP *p)
     if (p == NULL)
         return;
 
-    CRYPTO_DOWN_REF(&p->references, &i, p->lock);
-    REF_PRINT_COUNT("EC_nistp521", x);
+    CRYPTO_DOWN_REF(&p->references, &i);
+    REF_PRINT_COUNT("EC_nistp521", p);
     if (i > 0)
         return;
     REF_ASSERT_ISNT(i < 0);
 
-    CRYPTO_THREAD_lock_free(p->lock);
+    CRYPTO_FREE_REF(&p->references);
     OPENSSL_free(p);
 }
 
@@ -1943,10 +1984,8 @@ int ossl_ec_GFp_nistp521_points_mul(const EC_GROUP *group, EC_POINT *r,
             tmp_felems =
                 OPENSSL_malloc(sizeof(*tmp_felems) * (num_points * 17 + 1));
         if ((secrets == NULL) || (pre_comp == NULL)
-            || (mixed && (tmp_felems == NULL))) {
-            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
+            || (mixed && (tmp_felems == NULL)))
             goto err;
-        }
 
         /*
          * we treat NULL scalars as 0, and NULL points as points at infinity,

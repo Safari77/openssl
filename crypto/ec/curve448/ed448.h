@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2015-2016 Cryptography Research, Inc.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -21,7 +21,7 @@
 /* Number of bytes in an EdDSA private key. */
 # define EDDSA_448_PRIVATE_BYTES EDDSA_448_PUBLIC_BYTES
 
-/* Number of bytes in an EdDSA private key. */
+/* Number of bytes in an EdDSA signature. */
 # define EDDSA_448_SIGNATURE_BYTES (EDDSA_448_PUBLIC_BYTES + \
                                     EDDSA_448_PRIVATE_BYTES)
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -94,11 +94,10 @@ poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit);
          (a ^ ((a ^ b) | ((a - b) ^ b))) >> (sizeof(a) * 8 - 1) \
          )
 
-# if (defined(__SIZEOF_INT128__) && __SIZEOF_INT128__==16) && \
-     (defined(__SIZEOF_LONG__) && __SIZEOF_LONG__==8)
+# if defined(INT64_MAX) && defined(INT128_MAX)
 
 typedef unsigned long u64;
-typedef __uint128_t u128;
+typedef uint128_t u128;
 
 typedef struct {
     u64 h[3];
@@ -169,7 +168,7 @@ poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
         h1 = (u64)(d1 = (u128)h1 + (d0 >> 64) + U8TOU64(inp + 8));
         /*
          * padbit can be zero only when original len was
-         * POLY1306_BLOCK_SIZE, but we don't check
+         * POLY1305_BLOCK_SIZE, but we don't check
          */
         h2 += (u64)(d1 >> 64) + padbit;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -28,10 +28,8 @@
 
 static int uint64_new(ASN1_VALUE **pval, const ASN1_ITEM *it)
 {
-    if ((*pval = (ASN1_VALUE *)OPENSSL_zalloc(sizeof(uint64_t))) == NULL) {
-        ERR_raise(ERR_LIB_ASN1, ERR_R_MALLOC_FAILURE);
+    if ((*pval = (ASN1_VALUE *)OPENSSL_zalloc(sizeof(uint64_t))) == NULL)
         return 0;
-    }
     return 1;
 }
 
@@ -123,10 +121,8 @@ static int uint64_print(BIO *out, const ASN1_VALUE **pval, const ASN1_ITEM *it,
 
 static int uint32_new(ASN1_VALUE **pval, const ASN1_ITEM *it)
 {
-    if ((*pval = (ASN1_VALUE *)OPENSSL_zalloc(sizeof(uint32_t))) == NULL) {
-        ERR_raise(ERR_LIB_ASN1, ERR_R_MALLOC_FAILURE);
+    if ((*pval = (ASN1_VALUE *)OPENSSL_zalloc(sizeof(uint32_t))) == NULL)
         return 0;
-    }
     return 1;
 }
 
@@ -224,8 +220,8 @@ static int uint32_print(BIO *out, const ASN1_VALUE **pval, const ASN1_ITEM *it,
                         int indent, const ASN1_PCTX *pctx)
 {
     if ((it->size & INTxx_FLAG_SIGNED) == INTxx_FLAG_SIGNED)
-        return BIO_printf(out, "%d\n", **(int32_t **)pval);
-    return BIO_printf(out, "%u\n", **(uint32_t **)pval);
+        return BIO_printf(out, "%d\n", (int)**(int32_t **)pval);
+    return BIO_printf(out, "%u\n", (unsigned int)**(uint32_t **)pval);
 }
 
 

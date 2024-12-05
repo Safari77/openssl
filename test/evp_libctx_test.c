@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -20,6 +20,8 @@
  * internal use.
  */
 #include "internal/deprecated.h"
+#include <assert.h>
+#include <string.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 #include <openssl/dsa.h>
@@ -32,12 +34,11 @@
 #include "testutil.h"
 #include "internal/nelem.h"
 #include "crypto/bn_dh.h"   /* _bignum_ffdhe2048_p */
-#include "../e_os.h"        /* strcasecmp */
 
 static OSSL_LIB_CTX *libctx = NULL;
 static OSSL_PROVIDER *nullprov = NULL;
 static OSSL_PROVIDER *libprov = NULL;
-static STACK_OF(OPENSSL_CSTRING) *cipher_names = NULL;
+static STACK_OF(OPENSSL_STRING) *cipher_names = NULL;
 
 typedef enum OPTION_choice {
     OPT_ERR = -1,
@@ -54,7 +55,7 @@ const OPTIONS *test_get_options(void)
         { "config", OPT_CONFIG_FILE, '<',
           "The configuration file to use for the libctx" },
         { "provider", OPT_PROVIDER_NAME, 's',
-          "The provider to load (The default value is 'default'" },
+          "The provider to load (The default value is 'default')" },
         { NULL }
     };
     return test_options;
@@ -71,6 +72,37 @@ static const char *getname(int id)
 }
 #endif
 
+static int test_evp_cipher_api_safety(void)
+{
+    int ret = 0;
+    EVP_CIPHER_CTX *ctx = NULL;
+
+    ctx = EVP_CIPHER_CTX_new();
+
+    if (!TEST_ptr(ctx))
+        goto err;
+
+    /*
+     * Ensure that EVP_CIPHER_get_block_size returns 0
+     * if we haven't initialized the cipher in this context
+     */
+    if (!TEST_int_eq(EVP_CIPHER_CTX_get_block_size(ctx), 0))
+        goto err_free;
+
+    /*
+     * Ensure that EVP_CIPHER_get_iv_length returns 0
+     * if we haven't initialized the cipher in this context
+     */
+    if (!TEST_int_eq(EVP_CIPHER_CTX_get_iv_length(ctx), 0))
+        goto err_free;
+
+    ret = 1;
+err_free:
+    EVP_CIPHER_CTX_free(ctx);
+err:
+    return ret;
+}
+
 /*
  * We're using some DH specific values in this test, so we skip compilation if
  * we're in a no-dh build.
@@ -83,7 +115,7 @@ static int test_dsa_param_keygen(int tstid)
     int expected;
     EVP_PKEY_CTX *gen_ctx = NULL;
     EVP_PKEY *pkey_parm = NULL;
-    EVP_PKEY *pkey = NULL;
+    EVP_PKEY *pkey = NULL, *dup_pk = NULL;
     DSA *dsa = NULL;
     int pind, qind, gind;
     BIGNUM *p = NULL, *q = NULL, *g = NULL;
@@ -127,9 +159,17 @@ static int test_dsa_param_keygen(int tstid)
         || !TEST_int_gt(EVP_PKEY_keygen_init(gen_ctx), 0)
         || !TEST_int_eq(EVP_PKEY_keygen(gen_ctx, &pkey), expected))
         goto err;
+
+    if (expected) {
+        if (!TEST_ptr(dup_pk = EVP_PKEY_dup(pkey))
+            || !TEST_int_eq(EVP_PKEY_eq(pkey, dup_pk), 1))
+            goto err;
+    }
+
     ret = 1;
 err:
     EVP_PKEY_free(pkey);
+    EVP_PKEY_free(dup_pk);
     EVP_PKEY_CTX_free(gen_ctx);
     EVP_PKEY_free(pkey_parm);
     DSA_free(dsa);
@@ -147,7 +187,7 @@ static int do_dh_param_keygen(int tstid, const BIGNUM **bn)
     int expected;
     EVP_PKEY_CTX *gen_ctx = NULL;
     EVP_PKEY *pkey_parm = NULL;
-    EVP_PKEY *pkey = NULL;
+    EVP_PKEY *pkey = NULL, *dup_pk = NULL;
     DH *dh = NULL;
     int pind, qind, gind;
     BIGNUM *p = NULL, *q = NULL, *g = NULL;
@@ -182,9 +222,17 @@ static int do_dh_param_keygen(int tstid, const BIGNUM **bn)
         || !TEST_int_gt(EVP_PKEY_keygen_init(gen_ctx), 0)
         || !TEST_int_eq(EVP_PKEY_keygen(gen_ctx, &pkey), expected))
         goto err;
+
+    if (expected) {
+        if (!TEST_ptr(dup_pk = EVP_PKEY_dup(pkey))
+            || !TEST_int_eq(EVP_PKEY_eq(pkey, dup_pk), 1))
+            goto err;
+    }
+
     ret = 1;
 err:
     EVP_PKEY_free(pkey);
+    EVP_PKEY_free(dup_pk);
     EVP_PKEY_CTX_free(gen_ctx);
     EVP_PKEY_free(pkey_parm);
     DH_free(dh);
@@ -297,7 +345,7 @@ err:
 
 static int test_cipher_reinit(int test_id)
 {
-    int ret = 0, diff, ccm, siv;
+    int ret = 0, diff, ccm, siv, no_null_key;
     int out1_len = 0, out2_len = 0, out3_len = 0;
     EVP_CIPHER *cipher = NULL;
     EVP_CIPHER_CTX *ctx = NULL;
@@ -318,11 +366,15 @@ static int test_cipher_reinit(int test_id)
         0x03, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     };
-    unsigned char iv[16] = {
+    unsigned char iv[48] = {
+        0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
+        0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
+        0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
+        0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
         0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
         0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00
     };
-    const char *name = sk_OPENSSL_CSTRING_value(cipher_names, test_id);
+    const char *name = sk_OPENSSL_STRING_value(cipher_names, test_id);
 
     if (!TEST_ptr(ctx = EVP_CIPHER_CTX_new()))
         goto err;
@@ -332,22 +384,30 @@ static int test_cipher_reinit(int test_id)
         goto err;
 
     /* ccm fails on the second update - this matches OpenSSL 1_1_1 behaviour */
-    ccm = (EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE);
+    ccm = (EVP_CIPHER_get_mode(cipher) == EVP_CIPH_CCM_MODE);
 
     /* siv cannot be called with NULL key as the iv is irrelevant */
-    siv = (EVP_CIPHER_mode(cipher) == EVP_CIPH_SIV_MODE);
+    siv = (EVP_CIPHER_get_mode(cipher) == EVP_CIPH_SIV_MODE);
+
+    /*
+     * Skip init call with a null key for RC4 as the stream cipher does not
+     * handle reinit (1.1.1 behaviour).
+     */
+    no_null_key = EVP_CIPHER_is_a(cipher, "RC4")
+                  || EVP_CIPHER_is_a(cipher, "RC4-40")
+                  || EVP_CIPHER_is_a(cipher, "RC4-HMAC-MD5");
 
     /* DES3-WRAP uses random every update - so it will give a different value */
     diff = EVP_CIPHER_is_a(cipher, "DES3-WRAP");
-
     if (!TEST_true(EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv))
         || !TEST_true(EVP_EncryptUpdate(ctx, out1, &out1_len, in, sizeof(in)))
         || !TEST_true(EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
         || !TEST_int_eq(EVP_EncryptUpdate(ctx, out2, &out2_len, in, sizeof(in)),
                         ccm ? 0 : 1)
-        || !TEST_true(EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, iv))
+        || (!no_null_key
+        && (!TEST_true(EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, iv))
         || !TEST_int_eq(EVP_EncryptUpdate(ctx, out3, &out3_len, in, sizeof(in)),
-                        ccm || siv ? 0 : 1))
+                        ccm || siv ? 0 : 1))))
         goto err;
 
     if (ccm == 0) {
@@ -358,7 +418,7 @@ static int test_cipher_reinit(int test_id)
                 goto err;
         } else {
             if (!TEST_mem_eq(out1, out1_len, out2, out2_len)
-                || (!siv && !TEST_mem_eq(out1, out1_len, out3, out3_len)))
+                || (!siv && !no_null_key && !TEST_mem_eq(out1, out1_len, out3, out3_len)))
                 goto err;
         }
     }
@@ -400,11 +460,15 @@ static int test_cipher_reinit_partialupdate(int test_id)
         0x03, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     };
-    static const unsigned char iv[16] = {
+    static const unsigned char iv[48] = {
+        0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
+        0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
+        0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
+        0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
         0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x08,
         0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00
     };
-    const char *name = sk_OPENSSL_CSTRING_value(cipher_names, test_id);
+    const char *name = sk_OPENSSL_STRING_value(cipher_names, test_id);
 
     if (!TEST_ptr(ctx = EVP_CIPHER_CTX_new()))
         goto err;
@@ -413,14 +477,18 @@ static int test_cipher_reinit_partialupdate(int test_id)
     if (!TEST_ptr(cipher = EVP_CIPHER_fetch(libctx, name, NULL)))
         goto err;
 
-    in_len = EVP_CIPHER_block_size(cipher) / 2;
+    in_len = EVP_CIPHER_get_block_size(cipher);
+    if (!TEST_int_gt(in_len, 0))
+        goto err;
+    if (in_len > 1)
+        in_len /= 2;
 
     /* skip any ciphers that don't allow partial updates */
-    if (((EVP_CIPHER_flags(cipher)
+    if (((EVP_CIPHER_get_flags(cipher)
           & (EVP_CIPH_FLAG_CTS | EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK)) != 0)
-        || EVP_CIPHER_mode(cipher) == EVP_CIPH_CCM_MODE
-        || EVP_CIPHER_mode(cipher) == EVP_CIPH_XTS_MODE
-        || EVP_CIPHER_mode(cipher) == EVP_CIPH_WRAP_MODE) {
+        || EVP_CIPHER_get_mode(cipher) == EVP_CIPH_CCM_MODE
+        || EVP_CIPHER_get_mode(cipher) == EVP_CIPH_XTS_MODE
+        || EVP_CIPHER_get_mode(cipher) == EVP_CIPH_WRAP_MODE) {
         ret = 1;
         goto err;
     }
@@ -431,16 +499,18 @@ static int test_cipher_reinit_partialupdate(int test_id)
         || !TEST_true(EVP_EncryptUpdate(ctx, out2, &out2_len, in, in_len)))
         goto err;
 
-    if (!TEST_mem_eq(out1, out1_len, out2, out2_len))
-        goto err;
+    if (EVP_CIPHER_get_iv_length(cipher) != 0)
+        if (!TEST_mem_eq(out1, out1_len, out2, out2_len))
+            goto err;
 
-    if (EVP_CIPHER_mode(cipher) != EVP_CIPH_SIV_MODE) {
+    if (EVP_CIPHER_get_mode(cipher) != EVP_CIPH_SIV_MODE) {
         if (!TEST_true(EVP_EncryptInit_ex(ctx, NULL, NULL, NULL, iv))
             || !TEST_true(EVP_EncryptUpdate(ctx, out3, &out3_len, in, in_len)))
             goto err;
 
-        if (!TEST_mem_eq(out1, out1_len, out3, out3_len))
-            goto err;
+        if (EVP_CIPHER_get_iv_length(cipher) != 0)
+            if (!TEST_mem_eq(out1, out1_len, out3, out3_len))
+                goto err;
     }
     ret = 1;
 err:
@@ -449,32 +519,37 @@ err:
     return ret;
 }
 
-
 static int name_cmp(const char * const *a, const char * const *b)
 {
-    return strcasecmp(*a, *b);
+    return OPENSSL_strcasecmp(*a, *b);
 }
 
 static void collect_cipher_names(EVP_CIPHER *cipher, void *cipher_names_list)
 {
-    STACK_OF(OPENSSL_CSTRING) *names = cipher_names_list;
+    STACK_OF(OPENSSL_STRING) *names = cipher_names_list;
+    const char *name = EVP_CIPHER_get0_name(cipher);
+    char *namedup = NULL;
 
-    sk_OPENSSL_CSTRING_push(names, EVP_CIPHER_name(cipher));
+    /* Skip Triple-DES encryption operations in FIPS mode */
+    if (OSSL_PROVIDER_available(libctx, "fips")
+            && strncmp(name, "DES", 3) == 0)
+        return;
+    assert(name != NULL);
+    /* the cipher will be freed after returning, strdup is needed */
+    if ((namedup = OPENSSL_strdup(name)) != NULL
+        && !sk_OPENSSL_STRING_push(names, namedup))
+        OPENSSL_free(namedup);
 }
 
 static int rsa_keygen(int bits, EVP_PKEY **pub, EVP_PKEY **priv)
 {
     int ret = 0;
-    EVP_PKEY_CTX *keygen_ctx = NULL;
     unsigned char *pub_der = NULL;
     const unsigned char *pp = NULL;
     size_t len = 0;
     OSSL_ENCODER_CTX *ectx = NULL;
 
-    if (!TEST_ptr(keygen_ctx = EVP_PKEY_CTX_new_from_name(libctx, "RSA", NULL))
-        || !TEST_int_gt(EVP_PKEY_keygen_init(keygen_ctx), 0)
-        || !TEST_true(EVP_PKEY_CTX_set_rsa_keygen_bits(keygen_ctx, bits))
-        || !TEST_int_gt(EVP_PKEY_keygen(keygen_ctx, priv), 0)
+    if (!TEST_ptr(*priv = EVP_PKEY_Q_keygen(libctx, NULL, "RSA", (size_t)bits))
         || !TEST_ptr(ectx =
                      OSSL_ENCODER_CTX_new_for_pkey(*priv,
                                                    EVP_PKEY_PUBLIC_KEY,
@@ -489,7 +564,6 @@ static int rsa_keygen(int bits, EVP_PKEY **pub, EVP_PKEY **priv)
 err:
     OSSL_ENCODER_CTX_free(ectx);
     OPENSSL_free(pub_der);
-    EVP_PKEY_CTX_free(keygen_ctx);
     return ret;
 }
 
@@ -498,36 +572,88 @@ static int kem_rsa_gen_recover(void)
     int ret = 0;
     EVP_PKEY *pub = NULL;
     EVP_PKEY *priv = NULL;
-    EVP_PKEY_CTX *sctx = NULL, *rctx = NULL;
+    EVP_PKEY_CTX *sctx = NULL, *rctx = NULL, *dctx = NULL;
     unsigned char secret[256] = { 0, };
     unsigned char ct[256] = { 0, };
     unsigned char unwrap[256] = { 0, };
     size_t ctlen = 0, unwraplen = 0, secretlen = 0;
+    int bits = 2048;
 
-    ret = TEST_true(rsa_keygen(2048, &pub, &priv))
+    ret = TEST_true(rsa_keygen(bits, &pub, &priv))
           && TEST_ptr(sctx = EVP_PKEY_CTX_new_from_pkey(libctx, pub, NULL))
           && TEST_int_eq(EVP_PKEY_encapsulate_init(sctx, NULL), 1)
           && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(sctx, "RSASVE"), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(sctx, NULL, &ctlen, NULL,
+          && TEST_ptr(dctx = EVP_PKEY_CTX_dup(sctx))
+          /* Test that providing a NULL wrappedlen fails */
+          && TEST_int_eq(EVP_PKEY_encapsulate(dctx, NULL, NULL, NULL, NULL), 0)
+          && TEST_int_eq(EVP_PKEY_encapsulate(dctx, NULL, &ctlen, NULL,
                                               &secretlen), 1)
           && TEST_int_eq(ctlen, secretlen)
-          && TEST_int_eq(ctlen, 2048 / 8)
-          && TEST_int_eq(EVP_PKEY_encapsulate(sctx, ct, &ctlen, secret,
+          && TEST_int_eq(ctlen, bits / 8)
+          && TEST_int_eq(EVP_PKEY_encapsulate(dctx, ct, &ctlen, secret,
                                               &secretlen), 1)
           && TEST_ptr(rctx = EVP_PKEY_CTX_new_from_pkey(libctx, priv, NULL))
           && TEST_int_eq(EVP_PKEY_decapsulate_init(rctx, NULL), 1)
           && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(rctx, "RSASVE"), 1)
+          /* Test that providing a NULL unwrappedlen fails */
+          && TEST_int_eq(EVP_PKEY_decapsulate(rctx, NULL, NULL, ct, ctlen), 0)
           && TEST_int_eq(EVP_PKEY_decapsulate(rctx, NULL, &unwraplen,
                                               ct, ctlen), 1)
           && TEST_int_eq(EVP_PKEY_decapsulate(rctx, unwrap, &unwraplen,
                                               ct, ctlen), 1)
           && TEST_mem_eq(unwrap, unwraplen, secret, secretlen);
+
+    /* Test that providing a too short unwrapped/ctlen fails */
+    if (fips_provider_version_match(libctx, ">=3.4.0")) {
+        ctlen = 1;
+        if (!TEST_int_eq(EVP_PKEY_encapsulate(dctx, ct, &ctlen, secret,
+                                              &secretlen), 0))
+            ret = 0;
+        unwraplen = 1;
+        if (!TEST_int_eq(EVP_PKEY_decapsulate(rctx, unwrap, &unwraplen, ct,
+                                              ctlen), 0))
+            ret = 0;
+    }
+
     EVP_PKEY_free(pub);
     EVP_PKEY_free(priv);
     EVP_PKEY_CTX_free(rctx);
+    EVP_PKEY_CTX_free(dctx);
     EVP_PKEY_CTX_free(sctx);
     return ret;
 }
+
+#ifndef OPENSSL_NO_DES
+/*
+ * This test makes sure that EVP_CIPHER_CTX_rand_key() works correctly
+ * For fips mode this code would produce an error if the flag is not set.
+ */
+static int test_cipher_tdes_randkey(void)
+{
+    int ret;
+    EVP_CIPHER_CTX *ctx = NULL;
+    EVP_CIPHER *tdes_cipher = NULL, *aes_cipher = NULL;
+    unsigned char key[24] = { 0 };
+    OSSL_PARAM params[2];
+    int check = 0;
+
+    params[0] = OSSL_PARAM_construct_int("encrypt-check", &check);
+    params[1] = OSSL_PARAM_construct_end();
+    ret = TEST_ptr(aes_cipher = EVP_CIPHER_fetch(libctx, "AES-256-CBC", NULL))
+          && TEST_int_eq(EVP_CIPHER_get_flags(aes_cipher) & EVP_CIPH_RAND_KEY, 0)
+          && TEST_ptr(tdes_cipher = EVP_CIPHER_fetch(libctx, "DES-EDE3-CBC", NULL))
+          && TEST_int_ne(EVP_CIPHER_get_flags(tdes_cipher) & EVP_CIPH_RAND_KEY, 0)
+          && TEST_ptr(ctx = EVP_CIPHER_CTX_new())
+          && TEST_true(EVP_CipherInit_ex2(ctx, tdes_cipher, NULL, NULL, 1,
+                                          params))
+          && TEST_int_gt(EVP_CIPHER_CTX_rand_key(ctx, key), 0);
+
+    EVP_CIPHER_CTX_free(ctx);
+    EVP_CIPHER_free(tdes_cipher);
+    EVP_CIPHER_free(aes_cipher);
+    return ret;
+}
+#endif /* OPENSSL_NO_DES */
 
 static int kem_rsa_params(void)
 {
@@ -540,59 +666,60 @@ static int kem_rsa_params(void)
     size_t ctlen = 0, secretlen = 0;
 
     ret = TEST_true(rsa_keygen(2048, &pub, &priv))
-          && TEST_ptr(pubctx = EVP_PKEY_CTX_new_from_pkey(libctx, pub, NULL))
-          && TEST_ptr(privctx = EVP_PKEY_CTX_new_from_pkey(libctx, priv, NULL))
-          /* Test setting kem op before the init fails */
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), -2)
-          /* Test NULL ctx passed */
-          && TEST_int_eq(EVP_PKEY_encapsulate_init(NULL, NULL), 0)
-          && TEST_int_eq(EVP_PKEY_encapsulate(NULL, NULL, NULL, NULL, NULL), 0)
-          && TEST_int_eq(EVP_PKEY_decapsulate_init(NULL, NULL), 0)
-          && TEST_int_eq(EVP_PKEY_decapsulate(NULL, NULL, NULL, NULL, 0), 0)
-          /* Test Invalid operation */
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, NULL), -1)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, NULL, NULL, 0), 0)
-          /* Wrong key component - no secret should be returned on failure */
-          && TEST_int_eq(EVP_PKEY_decapsulate_init(pubctx, NULL), 1)
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), 1)
-          && TEST_int_eq(EVP_PKEY_decapsulate(pubctx, secret, &secretlen, ct,
-                                              sizeof(ct)), 0)
-          && TEST_uchar_eq(secret[0], 0)
-          /* Test encapsulate fails if the mode is not set */
-          && TEST_int_eq(EVP_PKEY_encapsulate_init(pubctx, NULL), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, secret, &secretlen), -2)
-          /* Test setting a bad kem ops fail */
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSA"), 0)
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx,  NULL), 0)
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(NULL,  "RSASVE"), 0)
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(NULL,  NULL), 0)
-          /* Test secretlen is optional */
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, secret, NULL), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, NULL), 1)
-          /* Test outlen is optional */
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, &secretlen), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, NULL, secret, &secretlen), 1)
-          /* test that either len must be set if out is NULL */
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, NULL), 0)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, NULL), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, &secretlen), 1)
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, &secretlen), 1)
-          /* Secret buffer should be set if there is an output buffer */
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, NULL, NULL), 0)
-          /* Test that lengths are optional if ct is not NULL */
-          && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, NULL, secret, NULL), 1)
-          /* Pass if secret or secret length are not NULL */
-          && TEST_int_eq(EVP_PKEY_decapsulate_init(privctx, NULL), 1)
-          && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(privctx, "RSASVE"), 1)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, NULL, ct, sizeof(ct)), 1)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, &secretlen, ct, sizeof(ct)), 1)
-          && TEST_int_eq(secretlen, 256)
-          /* Fail if passed NULL arguments */
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, NULL, ct, sizeof(ct)), 0)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, NULL, 0), 0)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, NULL, sizeof(ct)), 0)
-          && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, ct, 0), 0);
+        && TEST_ptr(pubctx = EVP_PKEY_CTX_new_from_pkey(libctx, pub, NULL))
+        && TEST_ptr(privctx = EVP_PKEY_CTX_new_from_pkey(libctx, priv, NULL))
+        /* Test setting kem op before the init fails */
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), -2)
+        /* Test NULL ctx passed */
+        && TEST_int_eq(EVP_PKEY_encapsulate_init(NULL, NULL), 0)
+        && TEST_int_eq(EVP_PKEY_encapsulate(NULL, NULL, NULL, NULL, NULL), 0)
+        && TEST_int_eq(EVP_PKEY_decapsulate_init(NULL, NULL), 0)
+        && TEST_int_eq(EVP_PKEY_decapsulate(NULL, NULL, NULL, NULL, 0), 0)
+        /* Test Invalid operation */
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, NULL), -1)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, NULL, NULL, 0), 0)
+        /* Wrong key component - no secret should be returned on failure */
+        && TEST_int_eq(EVP_PKEY_decapsulate_init(pubctx, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), 1)
+        && TEST_int_eq(EVP_PKEY_decapsulate(pubctx, secret, &secretlen, ct,
+                                            sizeof(ct)), 0)
+        && TEST_uchar_eq(secret[0], 0)
+        /* Test encapsulate fails if the mode is not set */
+        && TEST_int_eq(EVP_PKEY_encapsulate_init(pubctx, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, secret, &secretlen), -2)
+        /* Test setting a bad kem ops fail */
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSA"), 0)
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, NULL), 0)
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(NULL,  "RSASVE"), 0)
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(NULL,  NULL), 0)
+        /* Test secretlen is optional */
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(pubctx, "RSASVE"), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, secret, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, NULL), 1)
+        /* Test outlen is optional */
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, &secretlen), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, NULL, secret, &secretlen), 1)
+        /* test that either len must be set if out is NULL */
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, NULL), 0)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, NULL, NULL, &secretlen), 1)
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, NULL, &ctlen, NULL, &secretlen), 1)
+        /* Secret buffer should be set if there is an output buffer */
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, &ctlen, NULL, NULL), 0)
+        /* Test that lengths are optional if ct is not NULL */
+        && TEST_int_eq(EVP_PKEY_encapsulate(pubctx, ct, NULL, secret, NULL), 1)
+        /* Pass if secret or secret length are not NULL */
+        && TEST_int_eq(EVP_PKEY_decapsulate_init(privctx, NULL), 1)
+        && TEST_int_eq(EVP_PKEY_CTX_set_kem_op(privctx, "RSASVE"), 1)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, NULL, ct, sizeof(ct)), 1)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, &secretlen, ct, sizeof(ct)), 1)
+        && TEST_int_eq(secretlen, 256)
+        /* Fail if passed NULL arguments */
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, NULL, NULL, ct, sizeof(ct)), 0)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, NULL, 0), 0)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, NULL, sizeof(ct)), 0)
+        && TEST_int_eq(EVP_PKEY_decapsulate(privctx, secret, &secretlen, ct, 0), 0);
 
     EVP_PKEY_free(pub);
     EVP_PKEY_free(priv);
@@ -612,7 +739,7 @@ static EVP_PKEY *gen_dh_key(void)
     params[1] = OSSL_PARAM_construct_end();
 
     if (!TEST_ptr(gctx = EVP_PKEY_CTX_new_from_name(libctx, "DH", NULL))
-        || !TEST_true(EVP_PKEY_keygen_init(gctx))
+        || !TEST_int_gt(EVP_PKEY_keygen_init(gctx), 0)
         || !TEST_true(EVP_PKEY_CTX_set_params(gctx, params))
         || !TEST_true(EVP_PKEY_keygen(gctx, &pkey)))
         goto err;
@@ -669,32 +796,45 @@ int setup_tests(void)
     if (!test_get_libctx(&libctx, &nullprov, config_file, &libprov, prov_name))
         return 0;
 
+    ADD_TEST(test_evp_cipher_api_safety);
+
 #if !defined(OPENSSL_NO_DSA) && !defined(OPENSSL_NO_DH)
-    ADD_ALL_TESTS(test_dsa_param_keygen, 3 * 3 * 3);
+    if (strcmp(prov_name, "fips") != 0
+            || fips_provider_version_lt(libctx, 3, 4, 0))
+        ADD_ALL_TESTS(test_dsa_param_keygen, 3 * 3 * 3);
 #endif
 #ifndef OPENSSL_NO_DH
     ADD_ALL_TESTS(test_dh_safeprime_param_keygen, 3 * 3 * 3);
     ADD_TEST(dhx_cert_load);
 #endif
 
-    if (!TEST_ptr(cipher_names = sk_OPENSSL_CSTRING_new(name_cmp)))
+    if (!TEST_ptr(cipher_names = sk_OPENSSL_STRING_new(name_cmp)))
         return 0;
     EVP_CIPHER_do_all_provided(libctx, collect_cipher_names, cipher_names);
 
-    ADD_ALL_TESTS(test_cipher_reinit, sk_OPENSSL_CSTRING_num(cipher_names));
+    ADD_ALL_TESTS(test_cipher_reinit, sk_OPENSSL_STRING_num(cipher_names));
     ADD_ALL_TESTS(test_cipher_reinit_partialupdate,
-                  sk_OPENSSL_CSTRING_num(cipher_names));
+                  sk_OPENSSL_STRING_num(cipher_names));
     ADD_TEST(kem_rsa_gen_recover);
     ADD_TEST(kem_rsa_params);
 #ifndef OPENSSL_NO_DH
     ADD_TEST(kem_invalid_keytype);
 #endif
+#ifndef OPENSSL_NO_DES
+    ADD_TEST(test_cipher_tdes_randkey);
+#endif
     return 1;
+}
+
+/* Because OPENSSL_free is a macro, it can't be passed as a function pointer */
+static void string_free(char *m)
+{
+    OPENSSL_free(m);
 }
 
 void cleanup_tests(void)
 {
-    sk_OPENSSL_CSTRING_free(cipher_names);
+    sk_OPENSSL_STRING_pop_free(cipher_names, string_free);
     OSSL_PROVIDER_unload(libprov);
     OSSL_LIB_CTX_free(libctx);
     OSSL_PROVIDER_unload(nullprov);

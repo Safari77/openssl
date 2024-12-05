@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2007-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright Nokia 2007-2020
  * Copyright Siemens AG 2015-2020
  *
@@ -76,6 +76,7 @@ static int execute_test_handle_request(CMP_SRV_TEST_FIXTURE *fixture)
     if (!TEST_true(OSSL_CMP_SRV_CTX_init(ctx, dummy_custom_ctx,
                                          process_cert_request, NULL, NULL,
                                          NULL, NULL, NULL))
+        || !TEST_true(OSSL_CMP_SRV_CTX_init_trans(ctx, NULL, NULL))
         || !TEST_ptr(custom_ctx = OSSL_CMP_SRV_CTX_get0_custom_ctx(ctx))
         || !TEST_int_eq(strcmp(custom_ctx, dummy_custom_ctx), 0))
         goto end;
@@ -94,11 +95,11 @@ static int execute_test_handle_request(CMP_SRV_TEST_FIXTURE *fixture)
         goto end;
 
     if (!TEST_ptr(rsp = OSSL_CMP_CTX_server_perform(client_ctx, fixture->req))
-            || !TEST_int_eq(ossl_cmp_msg_get_bodytype(rsp),
+            || !TEST_int_eq(OSSL_CMP_MSG_get_bodytype(rsp),
                             OSSL_CMP_PKIBODY_ERROR)
             || !TEST_ptr(errorContent = rsp->body->value.error)
             || !TEST_int_eq(ASN1_INTEGER_get(errorContent->errorCode),
-                            dummy_errorCode))
+                            ERR_PACK(ERR_LIB_CMP, 0, dummy_errorCode)))
         goto end;
 
     res = 1;
@@ -148,7 +149,7 @@ int setup_tests(void)
     if (!test_arg_libctx(&libctx, &default_null_provider, &provider, 1, USAGE))
         return 0;
 
-    if (!TEST_ptr(request = load_pkimsg(request_f))) {
+    if (!TEST_ptr(request = load_pkimsg(request_f, libctx))) {
         cleanup_tests();
         return 0;
     }

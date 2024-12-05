@@ -100,6 +100,9 @@ int OSSL_PARAM_allocate_from_text(OSSL_PARAM *to,
                                   const char *key, const char *value,
                                   size_t value_n, int *found);
 
+int OSSL_PARAM_print_to_bio(const OSSL_PARAM *params, BIO *bio,
+                            int print_values);
+
 int OSSL_PARAM_get_int(const OSSL_PARAM *p, int *val);
 int OSSL_PARAM_get_uint(const OSSL_PARAM *p, unsigned int *val);
 int OSSL_PARAM_get_long(const OSSL_PARAM *p, long int *val);
@@ -149,6 +152,10 @@ int OSSL_PARAM_get_octet_string_ptr(const OSSL_PARAM *p, const void **val,
 
 int OSSL_PARAM_modified(const OSSL_PARAM *p);
 void OSSL_PARAM_set_all_unmodified(OSSL_PARAM *p);
+
+OSSL_PARAM *OSSL_PARAM_dup(const OSSL_PARAM *p);
+OSSL_PARAM *OSSL_PARAM_merge(const OSSL_PARAM *p1, const OSSL_PARAM *p2);
+void OSSL_PARAM_free(OSSL_PARAM *p);
 
 # ifdef  __cplusplus
 }

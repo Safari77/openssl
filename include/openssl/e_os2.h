@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -89,7 +89,7 @@ extern "C" {
 
 /*
  * DLL settings.  This part is a bit tough, because it's up to the
- * application implementor how he or she will link the application, so it
+ * application implementer how he or she will link the application, so it
  * requires some macro to be used.
  */
 # ifdef OPENSSL_SYS_WINDOWS
@@ -102,11 +102,11 @@ extern "C" {
 # endif
 
 /* ------------------------------- OpenVMS -------------------------------- */
-# if defined(__VMS) || defined(VMS) || defined(OPENSSL_SYS_VMS)
+# if defined(__VMS) || defined(VMS)
 #  if !defined(OPENSSL_SYS_VMS)
 #   undef OPENSSL_SYS_UNIX
+#   define OPENSSL_SYS_VMS
 #  endif
-#  define OPENSSL_SYS_VMS
 #  if defined(__DECC)
 #   define OPENSSL_SYS_VMS_DECC
 #  elif defined(__DECCXX)
@@ -200,6 +200,7 @@ extern "C" {
 # endif
 
 # ifndef ossl_ssize_t
+#  include <sys/types.h>
 #  define ossl_ssize_t ssize_t
 #  if defined(SSIZE_MAX)
 #   define OSSL_SSIZE_MAX SSIZE_MAX
@@ -210,7 +211,7 @@ extern "C" {
 #  endif
 # endif
 
-# ifdef DEBUG_UNUSED
+# if defined(UNUSEDRESULT_DEBUG)
 #  define __owur __attribute__((__warn_unused_result__))
 # else
 #  define __owur
@@ -228,6 +229,7 @@ typedef INT32 int32_t;
 typedef UINT32 uint32_t;
 typedef INT64 int64_t;
 typedef UINT64 uint64_t;
+typedef UINTN uintptr_t;
 # elif (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || \
      defined(__osf__) || defined(__sgi) || defined(__hpux) || \
      defined(OPENSSL_SYS_VMS) || defined (__OpenBSD__)
@@ -248,9 +250,21 @@ typedef int int32_t;
 typedef unsigned int uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
+# elif defined(OPENSSL_SYS_TANDEM)
+#  include <stdint.h>
+#  include <sys/types.h>
 # else
 #  include <stdint.h>
 #  undef OPENSSL_NO_STDINT_H
+# endif
+# if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L && \
+    defined(INTMAX_MAX) && defined(UINTMAX_MAX)
+typedef intmax_t ossl_intmax_t;
+typedef uintmax_t ossl_uintmax_t;
+# else
+/* Fall back to the largest we know we require and can handle */
+typedef int64_t ossl_intmax_t;
+typedef uint64_t ossl_uintmax_t;
 # endif
 
 /* ossl_inline: portable inline definition usable in public headers */
@@ -274,7 +288,8 @@ typedef unsigned __int64 uint64_t;
 #  define ossl_inline inline
 # endif
 
-# if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+# if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && \
+     !defined(__cplusplus)
 #  define ossl_noreturn _Noreturn
 # elif defined(__GNUC__) && __GNUC__ >= 2
 #  define ossl_noreturn __attribute__((noreturn))

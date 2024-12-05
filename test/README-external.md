@@ -5,69 +5,6 @@ It is possible to integrate external test suites into OpenSSL's `make test`.
 This capability is considered a developer option and does not work on all
 platforms.
 
-The BoringSSL test suite
-========================
-
-In order to run the BoringSSL tests with OpenSSL, first checkout the BoringSSL
-source code into an appropriate directory. This can be done in two ways:
-
-1) Separately from the OpenSSL checkout using:
-
-    $ git clone https://boringssl.googlesource.com/boringssl boringssl
-
-  The BoringSSL tests are only confirmed to work at a specific commit in the
-  BoringSSL repository. Later commits may or may not pass the test suite:
-
-    $ cd boringssl
-    $ git checkout 490469f850e
-
-2) Using the already configured submodule settings in OpenSSL:
-
-    $ git submodule update --init
-
-Configure the OpenSSL source code to enable the external tests:
-
-    $ cd ../openssl
-    $ ./config enable-ssl3 enable-ssl3-method enable-weak-ssl-ciphers \
-             enable-external-tests
-
-Note that using other config options than those given above may cause the tests
-to fail.
-
-Run the OpenSSL tests by providing the path to the BoringSSL test runner in the
-`BORING_RUNNER_DIR` environment variable:
-
-    $ BORING_RUNNER_DIR=/path/to/boringssl/ssl/test/runner make test
-
-Note that the test suite may change directory while running so the path provided
-should be absolute and not relative to the current working directory.
-
-To see more detailed output you can run just the BoringSSL tests with the
-verbose option:
-
-    $ VERBOSE=1 BORING_RUNNER_DIR=/path/to/boringssl/ssl/test/runner make \
-        TESTS="test_external_boringssl" test
-
-Test failures and suppressions
-------------------------------
-
-A large number of the BoringSSL tests are known to fail. A test could fail
-because of many possible reasons. For example:
-
-- A bug in OpenSSL
-- Different interpretations of standards
-- Assumptions about the way BoringSSL works that do not apply to OpenSSL
-- The test uses APIs added to BoringSSL that are not present in OpenSSL
-- etc
-
-In order to provide a "clean" baseline run with all the tests passing a config
-file has been provided that suppresses the running of tests that are known to
-fail. These suppressions are held in the file "test/ossl_shim/ossl_config.json"
-within the OpenSSL source code.
-
-The community is encouraged to contribute patches which reduce the number of
-suppressions that are currently present.
-
 Python PYCA/Cryptography test suite
 ===================================
 
@@ -80,7 +17,7 @@ First checkout the `PYCA/Cryptography` module into `./pyca-cryptography` using:
 
 Then configure/build OpenSSL compatible with the python module:
 
-    $ ./config shared enable-external-tests
+    $ ./config enable-external-tests
     $ make
 
 The tests will run in a python virtual environment which requires virtualenv
@@ -129,7 +66,7 @@ of your system.  Certain tests may require more installed packages to run.  No
 tests are expected to fail.
 
 GOST engine test suite
-===============
+======================
 
 Much like the PYCA/Cryptography test suite, this builds and runs the GOST engine
 tests against the local OpenSSL build.
@@ -140,7 +77,7 @@ You will need a git checkout of gost-engine at the top level:
 
 Then configure/build OpenSSL enabling external tests:
 
-    $ ./config shared enable-external-tests
+    $ ./config enable-external-tests
     $ make
 
 GOST engine requires CMake for the build process.
@@ -149,6 +86,66 @@ GOST engine tests will then be run as part of the rest of the suite, or can be
 explicitly run (with more debugging):
 
     $ make test VERBOSE=1 TESTS=test_external_gost_engine
+
+OQSprovider test suite
+======================
+
+Much like the PYCA/Cryptography test suite, this builds and runs the OQS
+(OpenQuantumSafe -- www.openquantumsafe.org) provider tests against the
+local OpenSSL build.
+
+You will need a git checkout of oqsprovider at the top level:
+
+    $ git submodule update --init
+
+Then configure/build OpenSSL enabling external tests:
+
+    $ ./config enable-external-tests
+    $ make
+
+oqsprovider requires CMake for the build process.
+
+OQSprovider tests will then be run as part of the rest of the suite, or can be
+explicitly run (with more debugging):
+
+    $ make test VERBOSE=1 TESTS=test_external_oqsprovider
+
+The environment variable `OQS_SKIP_TESTS` can be set to select tests and
+algorithms to be skipped, e.g. as follows:
+
+    OQS_SKIP_TESTS=kyber make test TESTS=test_external_oqsprovider
+
+The names of all supported quantum-safe algorithms are available at
+<https://github.com/open-quantum-safe/oqs-provider#algorithms>
+
+pkcs11-provider test suite
+==========================
+
+This builds and runs pkcs11-provider tests against the local OpenSSL build.
+
+You will need a git checkout of pkcs11-provider at the top level:
+
+    $ git submodule update --init
+
+Then configure/build OpenSSL enabling external tests:
+
+    $ ./config enable-external-tests
+    $ make
+
+pkcs11-provider requires meson for the build process. Moreover, it requires
+softhsm and nss softokn tokens and certtool, certutil, pkcs11-tool and expect
+to run the tests.
+
+Tests will then be run as part of the rest of the suite, or can be
+explicitly run (with more debugging):
+
+    $ make test VERBOSE=1 TESTS=test_external_pkcs11_provider
+
+Test failures and suppressions
+------------------------------
+
+There are tests for different software tokens - softhsm, nss-softokn and kryoptic.
+Kryoptic tests will not run at this point. Currently no test fails.
 
 Updating test suites
 ====================

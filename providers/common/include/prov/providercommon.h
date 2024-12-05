@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -22,3 +22,8 @@ void ossl_set_error_state(const char *type);
 
 /* Return true if the module is in a usable condition */
 int ossl_prov_is_running(void);
+
+static ossl_inline int ossl_param_is_empty(const OSSL_PARAM params[])
+{
+    return params == NULL || params->key == NULL;
+}

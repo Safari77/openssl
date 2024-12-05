@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -538,10 +538,6 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
     if (len < 2)
         return 0;
 
-    /*
-     * TODO: use the ossltest engine (optionally?) to disable crypto checks.
-     */
-
     /* This only fuzzes the initial flow from the client so far. */
     ctx = SSL_CTX_new(SSLv23_method());
 
@@ -618,8 +614,6 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
     X509_free(cert);
 #endif
 
-    /* TODO: Set up support for SRP and PSK */
-
     server = SSL_new(ctx);
     in = BIO_new(BIO_s_mem());
     out = BIO_new(BIO_s_mem());
@@ -631,8 +625,7 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
 
     OPENSSL_assert((size_t)BIO_write(in, buf, len) == len);
 
-    if ((opt & 0x01) != 0)
-    {
+    if ((opt & 0x01) != 0) {
         do {
             char early_buf[16384];
             size_t early_len;

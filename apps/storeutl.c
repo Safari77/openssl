@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -18,11 +18,14 @@
 
 static int process(const char *uri, const UI_METHOD *uimeth, PW_CB_DATA *uidata,
                    int expected, int criterion, OSSL_STORE_SEARCH *search,
-                   int text, int noout, int recursive, int indent, BIO *out,
+                   int text, int noout, int recursive, int indent, const char *outfile,
                    const char *prog, OSSL_LIB_CTX *libctx);
 
+static BIO *out = NULL;
+
 typedef enum OPTION_choice {
-    OPT_ERR = -1, OPT_EOF = 0, OPT_HELP, OPT_ENGINE, OPT_OUT, OPT_PASSIN,
+    OPT_COMMON,
+    OPT_ENGINE, OPT_OUT, OPT_PASSIN,
     OPT_NOOUT, OPT_TEXT, OPT_RECURSIVE,
     OPT_SEARCHFOR_CERTS, OPT_SEARCHFOR_KEYS, OPT_SEARCHFOR_CRLS,
     OPT_CRITERION_SUBJECT, OPT_CRITERION_ISSUER, OPT_CRITERION_SERIAL,
@@ -70,10 +73,9 @@ int storeutl_main(int argc, char *argv[])
 {
     int ret = 1, noout = 0, text = 0, recursive = 0;
     char *outfile = NULL, *passin = NULL, *passinarg = NULL;
-    BIO *out = NULL;
     ENGINE *e = NULL;
     OPTION_CHOICE o;
-    char *prog = opt_init(argc, argv, storeutl_options);
+    char *prog;
     PW_CB_DATA pw_cb_data;
     int expected = 0;
     int criterion = 0;
@@ -83,9 +85,11 @@ int storeutl_main(int argc, char *argv[])
     size_t fingerprintlen = 0;
     char *alias = NULL, *digestname = NULL;
     OSSL_STORE_SEARCH *search = NULL;
-    const EVP_MD *digest = NULL;
+    EVP_MD *digest = NULL;
     OSSL_LIB_CTX *libctx = app_get0_libctx();
 
+    opt_set_unknown_name("digest");
+    prog = opt_init(argc, argv, storeutl_options);
     while ((o = opt_next()) != OPT_EOF) {
         switch (o) {
         case OPT_EOF:
@@ -162,8 +166,7 @@ int storeutl_main(int argc, char *argv[])
             break;
         case OPT_CRITERION_ISSUER:
             if (criterion != 0
-                || (criterion == OSSL_STORE_SEARCH_BY_ISSUER_SERIAL
-                    && issuer != NULL)) {
+                && criterion != OSSL_STORE_SEARCH_BY_ISSUER_SERIAL) {
                 BIO_printf(bio_err, "%s: criterion already given.\n",
                            prog);
                 goto end;
@@ -180,8 +183,7 @@ int storeutl_main(int argc, char *argv[])
             break;
         case OPT_CRITERION_SERIAL:
             if (criterion != 0
-                || (criterion == OSSL_STORE_SEARCH_BY_ISSUER_SERIAL
-                    && serial != NULL)) {
+                && criterion != OSSL_STORE_SEARCH_BY_ISSUER_SERIAL) {
                 BIO_printf(bio_err, "%s: criterion already given.\n",
                            prog);
                 goto end;
@@ -257,15 +259,12 @@ int storeutl_main(int argc, char *argv[])
     }
 
     /* One argument, the URI */
-    argc = opt_num_rest();
-    argv = opt_rest();
-    if (argc != 1)
+    if (!opt_check_rest_arg("URI"))
         goto opthelp;
+    argv = opt_rest();
 
-    if (digestname != NULL) {
-        if (!opt_md(digestname, &digest))
-            goto opthelp;
-    }
+    if (!opt_md(digestname, &digest))
+        goto opthelp;
 
     if (criterion != 0) {
         switch (criterion) {
@@ -313,15 +312,12 @@ int storeutl_main(int argc, char *argv[])
     pw_cb_data.password = passin;
     pw_cb_data.prompt_info = argv[0];
 
-    out = bio_open_default(outfile, 'w', FORMAT_TEXT);
-    if (out == NULL)
-        goto end;
-
     ret = process(argv[0], get_ui_method(), &pw_cb_data,
                   expected, criterion, search,
-                  text, noout, recursive, 0, out, prog, libctx);
+                  text, noout, recursive, 0, outfile, prog, libctx);
 
  end:
+    EVP_MD_free(digest);
     OPENSSL_free(fingerprint);
     OPENSSL_free(alias);
     ASN1_INTEGER_free(serial);
@@ -349,14 +345,14 @@ static int indent_printf(int indent, BIO *bio, const char *format, ...)
 
 static int process(const char *uri, const UI_METHOD *uimeth, PW_CB_DATA *uidata,
                    int expected, int criterion, OSSL_STORE_SEARCH *search,
-                   int text, int noout, int recursive, int indent, BIO *out,
+                   int text, int noout, int recursive, int indent, const char *outfile,
                    const char *prog, OSSL_LIB_CTX *libctx)
 {
     OSSL_STORE_CTX *store_ctx = NULL;
     int ret = 1, items = 0;
 
     if ((store_ctx = OSSL_STORE_open_ex(uri, libctx, app_get0_propq(), uimeth, uidata,
-                                        NULL, NULL))
+                                        NULL, NULL, NULL))
         == NULL) {
         BIO_printf(bio_err, "Couldn't open file or uri %s\n", uri);
         ERR_print_errors(bio_err);
@@ -428,6 +424,13 @@ static int process(const char *uri, const UI_METHOD *uimeth, PW_CB_DATA *uidata,
             indent_printf(indent, bio_out, "%d: %s\n", items, infostr);
         }
 
+        if (out == NULL) {
+            if ((out = bio_open_default(outfile, 'w', FORMAT_TEXT)) == NULL) {
+                ret++;
+                goto end2;
+            }
+        }
+
         /*
          * Unfortunately, PEM_X509_INFO_write_bio() is sorely lacking in
          * functionality, so we must figure out how exactly to write things
@@ -439,7 +442,7 @@ static int process(const char *uri, const UI_METHOD *uimeth, PW_CB_DATA *uidata,
                 const char *suburi = OSSL_STORE_INFO_get0_NAME(info);
                 ret += process(suburi, uimeth, uidata,
                                expected, criterion, search,
-                               text, noout, recursive, indent + 2, out, prog,
+                               text, noout, recursive, indent + 2, outfile, prog,
                                libctx);
             }
             break;

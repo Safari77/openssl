@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,19 +14,24 @@
 #include "internal/deprecated.h"
 
 #include <stdio.h>
+#include <string.h>
 #include "internal/cryptlib.h"
 #include <openssl/evp.h>
+#include <openssl/x509.h>
 #include <openssl/objects.h>
 #include <openssl/params.h>
 #include <openssl/core_names.h>
+#include <openssl/rsa.h>
 #include <openssl/dh.h>
 #include <openssl/ec.h>
 #include "crypto/evp.h"
-#include "crypto/asn1.h"
+#include "crypto/cryptlib.h"
 #include "internal/provider.h"
 #include "evp_local.h"
 
 #if !defined(FIPS_MODULE)
+# include "crypto/asn1.h"
+
 int EVP_CIPHER_param_to_asn1(EVP_CIPHER_CTX *c, ASN1_TYPE *type)
 {
     return evp_cipher_param_to_asn1_ex(c, type, NULL);
@@ -45,7 +50,7 @@ int EVP_CIPHER_get_asn1_iv(EVP_CIPHER_CTX *ctx, ASN1_TYPE *type)
     if (type != NULL) {
         unsigned char iv[EVP_MAX_IV_LENGTH];
 
-        l = EVP_CIPHER_CTX_iv_length(ctx);
+        l = EVP_CIPHER_CTX_get_iv_length(ctx);
         if (!ossl_assert(l <= sizeof(iv)))
             return -1;
         i = ASN1_TYPE_get_octetstring(type, iv, l);
@@ -66,7 +71,7 @@ int EVP_CIPHER_set_asn1_iv(EVP_CIPHER_CTX *c, ASN1_TYPE *type)
 
     if (type != NULL) {
         oiv = (unsigned char *)EVP_CIPHER_CTX_original_iv(c);
-        j = EVP_CIPHER_CTX_iv_length(c);
+        j = EVP_CIPHER_CTX_get_iv_length(c);
         OPENSSL_assert(j <= sizeof(c->iv));
         i = ASN1_TYPE_set_octetstring(type, oiv, j);
     }
@@ -77,8 +82,12 @@ int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
                                 evp_cipher_aead_asn1_params *asn1_params)
 {
     int ret = -1;                /* Assume the worst */
-    const EVP_CIPHER *cipher = c->cipher;
+    const EVP_CIPHER *cipher;
 
+    if (c == NULL || c->cipher == NULL)
+        goto err;
+
+    cipher = c->cipher;
     /*
      * For legacy implementations, we detect custom AlgorithmIdentifier
      * parameter handling by checking if the function pointer
@@ -97,8 +106,8 @@ int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
      */
     if (cipher->set_asn1_parameters != NULL) {
         ret = cipher->set_asn1_parameters(c, type);
-    } else if ((EVP_CIPHER_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_ASN1) == 0) {
-        switch (EVP_CIPHER_mode(cipher)) {
+    } else if ((EVP_CIPHER_get_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_ASN1) == 0) {
+        switch (EVP_CIPHER_get_mode(cipher)) {
         case EVP_CIPH_WRAP_MODE:
             if (EVP_CIPHER_is_a(cipher, SN_id_smime_alg_CMS3DESwrap))
                 ASN1_TYPE_set(type, V_ASN1_NULL, NULL);
@@ -119,36 +128,13 @@ int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
             ret = EVP_CIPHER_set_asn1_iv(c, type);
         }
     } else if (cipher->prov != NULL) {
-        OSSL_PARAM params[3], *p = params;
-        unsigned char *der = NULL, *derp;
+        /* We cheat, there's no need for an object ID for this use */
+        X509_ALGOR alg;
 
-        /*
-         * We make two passes, the first to get the appropriate buffer size,
-         * and the second to get the actual value.
-         */
-        *p++ = OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_ALG_ID,
-                                                 NULL, 0);
-        *p = OSSL_PARAM_construct_end();
+        alg.algorithm = NULL;
+        alg.parameter = type;
 
-        if (!EVP_CIPHER_CTX_get_params(c, params))
-            goto err;
-
-        /* ... but, we should get a return size too! */
-        if (OSSL_PARAM_modified(params)
-            && params[0].return_size != 0
-            && (der = OPENSSL_malloc(params[0].return_size)) != NULL) {
-            params[0].data = der;
-            params[0].data_size = params[0].return_size;
-            OSSL_PARAM_set_all_unmodified(params);
-            derp = der;
-            if (EVP_CIPHER_CTX_get_params(c, params)
-                && OSSL_PARAM_modified(params)
-                && d2i_ASN1_TYPE(&type, (const unsigned char **)&derp,
-                                 params[0].return_size) != NULL) {
-                ret = 1;
-            }
-            OPENSSL_free(der);
-        }
+        ret = EVP_CIPHER_CTX_get_algor_params(c, &alg);
     } else {
         ret = -2;
     }
@@ -167,8 +153,12 @@ int evp_cipher_asn1_to_param_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
                                 evp_cipher_aead_asn1_params *asn1_params)
 {
     int ret = -1;                /* Assume the worst */
-    const EVP_CIPHER *cipher = c->cipher;
+    const EVP_CIPHER *cipher;
 
+    if (c == NULL || c->cipher == NULL)
+        goto err;
+
+    cipher = c->cipher;
     /*
      * For legacy implementations, we detect custom AlgorithmIdentifier
      * parameter handling by checking if there the function pointer
@@ -187,8 +177,8 @@ int evp_cipher_asn1_to_param_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
      */
     if (cipher->get_asn1_parameters != NULL) {
         ret = cipher->get_asn1_parameters(c, type);
-    } else if ((EVP_CIPHER_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_ASN1) == 0) {
-        switch (EVP_CIPHER_mode(cipher)) {
+    } else if ((EVP_CIPHER_get_flags(cipher) & EVP_CIPH_FLAG_CUSTOM_ASN1) == 0) {
+        switch (EVP_CIPHER_get_mode(cipher)) {
         case EVP_CIPH_WRAP_MODE:
             ret = 1;
             break;
@@ -204,26 +194,21 @@ int evp_cipher_asn1_to_param_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
             break;
 
         default:
-            ret = EVP_CIPHER_get_asn1_iv(c, type);
+            ret = EVP_CIPHER_get_asn1_iv(c, type) >= 0 ? 1 : -1;
         }
     } else if (cipher->prov != NULL) {
-        OSSL_PARAM params[3], *p = params;
-        unsigned char *der = NULL;
-        int derl = -1;
+        /* We cheat, there's no need for an object ID for this use */
+        X509_ALGOR alg;
 
-        if ((derl = i2d_ASN1_TYPE(type, &der)) >= 0) {
-            *p++ =
-                OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_ALG_ID,
-                                                  der, (size_t)derl);
-            *p = OSSL_PARAM_construct_end();
-            if (EVP_CIPHER_CTX_set_params(c, params))
-                ret = 1;
-            OPENSSL_free(der);
-        }
+        alg.algorithm = NULL;
+        alg.parameter = type;
+
+        ret = EVP_CIPHER_CTX_set_algor_params(c, &alg);
     } else {
         ret = -2;
     }
 
+err:
     if (ret == -2)
         ERR_raise(ERR_LIB_EVP, EVP_R_UNSUPPORTED_CIPHER);
     else if (ret <= 0)
@@ -267,10 +252,10 @@ int evp_cipher_set_asn1_aead_params(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
 #endif /* !defined(FIPS_MODULE) */
 
 /* Convert the various cipher NIDs and dummies to a proper OID NID */
-int EVP_CIPHER_type(const EVP_CIPHER *ctx)
+int EVP_CIPHER_get_type(const EVP_CIPHER *cipher)
 {
     int nid;
-    nid = EVP_CIPHER_nid(ctx);
+    nid = EVP_CIPHER_get_nid(cipher);
 
     switch (nid) {
 
@@ -334,12 +319,12 @@ int EVP_CIPHER_type(const EVP_CIPHER *ctx)
 
 int evp_cipher_cache_constants(EVP_CIPHER *cipher)
 {
-    int ok, aead = 0, custom_iv = 0, cts = 0, multiblock = 0;
+    int ok, aead = 0, custom_iv = 0, cts = 0, multiblock = 0, randkey = 0;
     size_t ivlen = 0;
     size_t blksz = 0;
     size_t keylen = 0;
     unsigned int mode = 0;
-    OSSL_PARAM params[9];
+    OSSL_PARAM params[10];
 
     params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_BLOCK_SIZE, &blksz);
     params[1] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_IVLEN, &ivlen);
@@ -351,8 +336,10 @@ int evp_cipher_cache_constants(EVP_CIPHER *cipher)
     params[6] = OSSL_PARAM_construct_int(OSSL_CIPHER_PARAM_CTS, &cts);
     params[7] = OSSL_PARAM_construct_int(OSSL_CIPHER_PARAM_TLS1_MULTIBLOCK,
                                          &multiblock);
-    params[8] = OSSL_PARAM_construct_end();
-    ok = evp_do_ciph_getparams(cipher, params);
+    params[8] = OSSL_PARAM_construct_int(OSSL_CIPHER_PARAM_HAS_RAND_KEY,
+                                         &randkey);
+    params[9] = OSSL_PARAM_construct_end();
+    ok = evp_do_ciph_getparams(cipher, params) > 0;
     if (ok) {
         cipher->block_size = blksz;
         cipher->iv_len = ivlen;
@@ -366,21 +353,25 @@ int evp_cipher_cache_constants(EVP_CIPHER *cipher)
             cipher->flags |= EVP_CIPH_FLAG_CTS;
         if (multiblock)
             cipher->flags |= EVP_CIPH_FLAG_TLS1_1_MULTIBLOCK;
-        /* Provided implementations may have a custom cipher_cipher */
-        if (cipher->prov != NULL && cipher->ccipher != NULL)
+        if (cipher->ccipher != NULL)
             cipher->flags |= EVP_CIPH_FLAG_CUSTOM_CIPHER;
+        if (randkey)
+            cipher->flags |= EVP_CIPH_RAND_KEY;
+        if (OSSL_PARAM_locate_const(EVP_CIPHER_gettable_ctx_params(cipher),
+                                    OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS))
+            cipher->flags |= EVP_CIPH_FLAG_CUSTOM_ASN1;
     }
     return ok;
 }
 
-int EVP_CIPHER_block_size(const EVP_CIPHER *cipher)
+int EVP_CIPHER_get_block_size(const EVP_CIPHER *cipher)
 {
-    return cipher->block_size;
+    return (cipher == NULL) ? 0 : cipher->block_size;
 }
 
-int EVP_CIPHER_CTX_block_size(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_block_size(const EVP_CIPHER_CTX *ctx)
 {
-    return EVP_CIPHER_block_size(ctx->cipher);
+    return EVP_CIPHER_get_block_size(ctx->cipher);
 }
 
 int EVP_CIPHER_impl_ctx_size(const EVP_CIPHER *e)
@@ -391,6 +382,9 @@ int EVP_CIPHER_impl_ctx_size(const EVP_CIPHER *e)
 int EVP_Cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
                const unsigned char *in, unsigned int inl)
 {
+    if (ctx == NULL || ctx->cipher == NULL)
+        return 0;
+
     if (ctx->cipher->prov != NULL) {
         /*
          * If the provided implementation has a ccipher function, we use it,
@@ -401,19 +395,22 @@ int EVP_Cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
          */
         int ret = -1;
         size_t outl = 0;
-        size_t blocksize = EVP_CIPHER_CTX_block_size(ctx);
+        size_t blocksize = EVP_CIPHER_CTX_get_block_size(ctx);
+
+        if (blocksize == 0)
+            return 0;
 
         if (ctx->cipher->ccipher != NULL)
-            ret =  ctx->cipher->ccipher(ctx->provctx, out, &outl,
+            ret =  ctx->cipher->ccipher(ctx->algctx, out, &outl,
                                         inl + (blocksize == 1 ? 0 : blocksize),
                                         in, (size_t)inl)
                 ? (int)outl : -1;
         else if (in != NULL)
-            ret = ctx->cipher->cupdate(ctx->provctx, out, &outl,
+            ret = ctx->cipher->cupdate(ctx->algctx, out, &outl,
                                        inl + (blocksize == 1 ? 0 : blocksize),
                                        in, (size_t)inl);
         else
-            ret = ctx->cipher->cfinal(ctx->provctx, out, &outl,
+            ret = ctx->cipher->cfinal(ctx->algctx, out, &outl,
                                       blocksize == 1 ? 0 : blocksize);
 
         return ret;
@@ -422,19 +419,42 @@ int EVP_Cipher(EVP_CIPHER_CTX *ctx, unsigned char *out,
     return ctx->cipher->do_cipher(ctx, out, in, inl);
 }
 
+#ifndef OPENSSL_NO_DEPRECATED_3_0
 const EVP_CIPHER *EVP_CIPHER_CTX_cipher(const EVP_CIPHER_CTX *ctx)
 {
+    if (ctx == NULL)
+        return NULL;
+    return ctx->cipher;
+}
+#endif
+
+const EVP_CIPHER *EVP_CIPHER_CTX_get0_cipher(const EVP_CIPHER_CTX *ctx)
+{
+    if (ctx == NULL)
+        return NULL;
     return ctx->cipher;
 }
 
-int EVP_CIPHER_CTX_encrypting(const EVP_CIPHER_CTX *ctx)
+EVP_CIPHER *EVP_CIPHER_CTX_get1_cipher(EVP_CIPHER_CTX *ctx)
+{
+    EVP_CIPHER *cipher;
+
+    if (ctx == NULL || ctx->cipher == NULL)
+        return NULL;
+    cipher = (EVP_CIPHER *)ctx->cipher;
+    if (!EVP_CIPHER_up_ref(cipher))
+        return NULL;
+    return cipher;
+}
+
+int EVP_CIPHER_CTX_is_encrypting(const EVP_CIPHER_CTX *ctx)
 {
     return ctx->encrypt;
 }
 
-unsigned long EVP_CIPHER_flags(const EVP_CIPHER *cipher)
+unsigned long EVP_CIPHER_get_flags(const EVP_CIPHER *cipher)
 {
-    return cipher->flags;
+    return cipher == NULL ? 0 : cipher->flags;
 }
 
 void *EVP_CIPHER_CTX_get_app_data(const EVP_CIPHER_CTX *ctx)
@@ -462,40 +482,58 @@ void *EVP_CIPHER_CTX_set_cipher_data(EVP_CIPHER_CTX *ctx, void *cipher_data)
     return old_cipher_data;
 }
 
-int EVP_CIPHER_iv_length(const EVP_CIPHER *cipher)
+int EVP_CIPHER_get_iv_length(const EVP_CIPHER *cipher)
 {
-    return cipher->iv_len;
+    return (cipher == NULL) ? 0 : cipher->iv_len;
 }
 
-int EVP_CIPHER_CTX_iv_length(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_iv_length(const EVP_CIPHER_CTX *ctx)
 {
-    int rv, len = EVP_CIPHER_iv_length(ctx->cipher);
-    size_t v = len;
-    OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+    if (ctx->cipher == NULL)
+        return 0;
 
-    params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_IVLEN, &v);
-    rv = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
-    if (rv == EVP_CTRL_RET_UNSUPPORTED)
-        goto legacy;
-    return rv != 0 ? (int)v : -1;
-    /* Code below to be removed when legacy support is dropped. */
-legacy:
-    if ((EVP_CIPHER_flags(ctx->cipher) & EVP_CIPH_CUSTOM_IV_LENGTH) != 0) {
-        rv = EVP_CIPHER_CTX_ctrl((EVP_CIPHER_CTX *)ctx, EVP_CTRL_GET_IVLEN,
-                                 0, &len);
-        return (rv == 1) ? len : -1;
+    if (ctx->iv_len < 0) {
+        int rv, len = EVP_CIPHER_get_iv_length(ctx->cipher);
+        size_t v = len;
+        OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+
+        if (ctx->cipher->get_ctx_params != NULL) {
+            params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_IVLEN,
+                                                    &v);
+            rv = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
+            if (rv > 0) {
+                if (OSSL_PARAM_modified(params)
+                        && !OSSL_PARAM_get_int(params, &len))
+                    return -1;
+            } else if (rv != EVP_CTRL_RET_UNSUPPORTED) {
+                return -1;
+            }
+        }
+        /* Code below to be removed when legacy support is dropped. */
+        else if ((EVP_CIPHER_get_flags(ctx->cipher)
+                  & EVP_CIPH_CUSTOM_IV_LENGTH) != 0) {
+            rv = EVP_CIPHER_CTX_ctrl((EVP_CIPHER_CTX *)ctx, EVP_CTRL_GET_IVLEN,
+                                     0, &len);
+            if (rv <= 0)
+                return -1;
+        }
+        /*-
+         * Casting away the const is annoying but required here.  We need to
+         * cache the result for performance reasons.
+         */
+        ((EVP_CIPHER_CTX *)ctx)->iv_len = len;
     }
-    return len;
+    return ctx->iv_len;
 }
 
-int EVP_CIPHER_CTX_tag_length(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_tag_length(const EVP_CIPHER_CTX *ctx)
 {
     int ret;
     size_t v = 0;
     OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
 
     params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_AEAD_TAGLEN, &v);
-    ret = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    ret = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
     return ret == 1 ? (int)v : 0;
 }
 
@@ -509,7 +547,7 @@ const unsigned char *EVP_CIPHER_CTX_original_iv(const EVP_CIPHER_CTX *ctx)
     params[0] =
         OSSL_PARAM_construct_octet_ptr(OSSL_CIPHER_PARAM_IV,
                                        (void **)&v, sizeof(ctx->oiv));
-    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
 
     return ok != 0 ? v : NULL;
 }
@@ -526,7 +564,7 @@ const unsigned char *EVP_CIPHER_CTX_iv(const EVP_CIPHER_CTX *ctx)
     params[0] =
         OSSL_PARAM_construct_octet_ptr(OSSL_CIPHER_PARAM_UPDATED_IV,
                                        (void **)&v, sizeof(ctx->iv));
-    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
 
     return ok != 0 ? v : NULL;
 }
@@ -540,7 +578,7 @@ unsigned char *EVP_CIPHER_CTX_iv_noconst(EVP_CIPHER_CTX *ctx)
     params[0] =
         OSSL_PARAM_construct_octet_ptr(OSSL_CIPHER_PARAM_UPDATED_IV,
                                        (void **)&v, sizeof(ctx->iv));
-    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
 
     return ok != 0 ? v : NULL;
 }
@@ -552,7 +590,7 @@ int EVP_CIPHER_CTX_get_updated_iv(EVP_CIPHER_CTX *ctx, void *buf, size_t len)
 
     params[0] =
         OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_UPDATED_IV, buf, len);
-    return evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    return evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params) > 0;
 }
 
 int EVP_CIPHER_CTX_get_original_iv(EVP_CIPHER_CTX *ctx, void *buf, size_t len)
@@ -561,7 +599,7 @@ int EVP_CIPHER_CTX_get_original_iv(EVP_CIPHER_CTX *ctx, void *buf, size_t len)
 
     params[0] =
         OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_IV, buf, len);
-    return evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    return evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params) > 0;
 }
 
 unsigned char *EVP_CIPHER_CTX_buf_noconst(EVP_CIPHER_CTX *ctx)
@@ -569,14 +607,14 @@ unsigned char *EVP_CIPHER_CTX_buf_noconst(EVP_CIPHER_CTX *ctx)
     return ctx->buf;
 }
 
-int EVP_CIPHER_CTX_num(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_num(const EVP_CIPHER_CTX *ctx)
 {
     int ok;
     unsigned int v = (unsigned int)ctx->num;
     OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
 
     params[0] = OSSL_PARAM_construct_uint(OSSL_CIPHER_PARAM_NUM, &v);
-    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
 
     return ok != 0 ? (int)v : EVP_CTRL_RET_UNSUPPORTED;
 }
@@ -588,58 +626,88 @@ int EVP_CIPHER_CTX_set_num(EVP_CIPHER_CTX *ctx, int num)
     OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
 
     params[0] = OSSL_PARAM_construct_uint(OSSL_CIPHER_PARAM_NUM, &n);
-    ok = evp_do_ciph_ctx_setparams(ctx->cipher, ctx->provctx, params);
+    ok = evp_do_ciph_ctx_setparams(ctx->cipher, ctx->algctx, params);
 
     if (ok != 0)
         ctx->num = (int)n;
     return ok != 0;
 }
 
-int EVP_CIPHER_key_length(const EVP_CIPHER *cipher)
+int EVP_CIPHER_get_key_length(const EVP_CIPHER *cipher)
 {
     return cipher->key_len;
 }
 
-int EVP_CIPHER_CTX_key_length(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_key_length(const EVP_CIPHER_CTX *ctx)
 {
-    int ok;
-    size_t v = ctx->key_len;
-    OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+    if (ctx->cipher == NULL)
+        return 0;
 
-    params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_KEYLEN, &v);
-    ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->provctx, params);
+    if (ctx->key_len <= 0 && ctx->cipher->prov != NULL) {
+        int ok;
+        OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+        size_t len;
 
-    return ok != 0 ? (int)v : EVP_CTRL_RET_UNSUPPORTED;
+        params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_KEYLEN, &len);
+        ok = evp_do_ciph_ctx_getparams(ctx->cipher, ctx->algctx, params);
+        if (ok <= 0)
+            return EVP_CTRL_RET_UNSUPPORTED;
+
+        /*-
+         * The if branch should never be taken since EVP_MAX_KEY_LENGTH is
+         * less than INT_MAX but best to be safe.
+         *
+         * Casting away the const is annoying but required here.  We need to
+         * cache the result for performance reasons.
+         */
+        if (!OSSL_PARAM_get_int(params, &((EVP_CIPHER_CTX *)ctx)->key_len))
+            return -1;
+        ((EVP_CIPHER_CTX *)ctx)->key_len = (int)len;
+    }
+    return ctx->key_len;
 }
 
-int EVP_CIPHER_nid(const EVP_CIPHER *cipher)
+int EVP_CIPHER_get_nid(const EVP_CIPHER *cipher)
 {
-    return cipher->nid;
+    return (cipher == NULL) ? NID_undef : cipher->nid;
 }
 
-int EVP_CIPHER_CTX_nid(const EVP_CIPHER_CTX *ctx)
+int EVP_CIPHER_CTX_get_nid(const EVP_CIPHER_CTX *ctx)
 {
-    return ctx->cipher->nid;
+    return EVP_CIPHER_get_nid(ctx->cipher);
 }
 
 int EVP_CIPHER_is_a(const EVP_CIPHER *cipher, const char *name)
 {
+    if (cipher == NULL)
+        return 0;
     if (cipher->prov != NULL)
         return evp_is_a(cipher->prov, cipher->name_id, NULL, name);
-    return evp_is_a(NULL, 0, EVP_CIPHER_name(cipher), name);
+    return evp_is_a(NULL, 0, EVP_CIPHER_get0_name(cipher), name);
 }
 
-int EVP_CIPHER_number(const EVP_CIPHER *cipher)
+int evp_cipher_get_number(const EVP_CIPHER *cipher)
 {
     return cipher->name_id;
 }
 
-const char *EVP_CIPHER_name(const EVP_CIPHER *cipher)
+const char *EVP_CIPHER_get0_name(const EVP_CIPHER *cipher)
 {
-    if (cipher->prov != NULL)
-        return evp_first_name(cipher->prov, cipher->name_id);
+    if (cipher->type_name != NULL)
+        return cipher->type_name;
 #ifndef FIPS_MODULE
-    return OBJ_nid2sn(EVP_CIPHER_nid(cipher));
+    return OBJ_nid2sn(EVP_CIPHER_get_nid(cipher));
+#else
+    return NULL;
+#endif
+}
+
+const char *EVP_CIPHER_get0_description(const EVP_CIPHER *cipher)
+{
+    if (cipher->description != NULL)
+        return cipher->description;
+#ifndef FIPS_MODULE
+    return OBJ_nid2ln(EVP_CIPHER_get_nid(cipher));
 #else
     return NULL;
 #endif
@@ -655,32 +723,47 @@ int EVP_CIPHER_names_do_all(const EVP_CIPHER *cipher,
     return 1;
 }
 
-const OSSL_PROVIDER *EVP_CIPHER_provider(const EVP_CIPHER *cipher)
+const OSSL_PROVIDER *EVP_CIPHER_get0_provider(const EVP_CIPHER *cipher)
 {
     return cipher->prov;
 }
 
-int EVP_CIPHER_mode(const EVP_CIPHER *cipher)
+int EVP_CIPHER_get_mode(const EVP_CIPHER *cipher)
 {
-    return EVP_CIPHER_flags(cipher) & EVP_CIPH_MODE;
+    return EVP_CIPHER_get_flags(cipher) & EVP_CIPH_MODE;
 }
 
 int EVP_MD_is_a(const EVP_MD *md, const char *name)
 {
+    if (md == NULL)
+        return 0;
     if (md->prov != NULL)
         return evp_is_a(md->prov, md->name_id, NULL, name);
-    return evp_is_a(NULL, 0, EVP_MD_name(md), name);
+    return evp_is_a(NULL, 0, EVP_MD_get0_name(md), name);
 }
 
-int EVP_MD_number(const EVP_MD *md)
+int evp_md_get_number(const EVP_MD *md)
 {
     return md->name_id;
 }
 
-const char *EVP_MD_name(const EVP_MD *md)
+const char *EVP_MD_get0_description(const EVP_MD *md)
 {
-    if (md->prov != NULL)
-        return evp_first_name(md->prov, md->name_id);
+    if (md->description != NULL)
+        return md->description;
+#ifndef FIPS_MODULE
+    return OBJ_nid2ln(EVP_MD_nid(md));
+#else
+    return NULL;
+#endif
+}
+
+const char *EVP_MD_get0_name(const EVP_MD *md)
+{
+    if (md == NULL)
+        return NULL;
+    if (md->type_name != NULL)
+        return md->type_name;
 #ifndef FIPS_MODULE
     return OBJ_nid2sn(EVP_MD_nid(md));
 #else
@@ -698,22 +781,22 @@ int EVP_MD_names_do_all(const EVP_MD *md,
     return 1;
 }
 
-const OSSL_PROVIDER *EVP_MD_provider(const EVP_MD *md)
+const OSSL_PROVIDER *EVP_MD_get0_provider(const EVP_MD *md)
 {
     return md->prov;
 }
 
-int EVP_MD_type(const EVP_MD *md)
+int EVP_MD_get_type(const EVP_MD *md)
 {
     return md->type;
 }
 
-int EVP_MD_pkey_type(const EVP_MD *md)
+int EVP_MD_get_pkey_type(const EVP_MD *md)
 {
     return md->pkey_type;
 }
 
-int EVP_MD_block_size(const EVP_MD *md)
+int EVP_MD_get_block_size(const EVP_MD *md)
 {
     if (md == NULL) {
         ERR_raise(ERR_LIB_EVP, EVP_R_MESSAGE_DIGEST_IS_NULL);
@@ -722,7 +805,7 @@ int EVP_MD_block_size(const EVP_MD *md)
     return md->block_size;
 }
 
-int EVP_MD_size(const EVP_MD *md)
+int EVP_MD_get_size(const EVP_MD *md)
 {
     if (md == NULL) {
         ERR_raise(ERR_LIB_EVP, EVP_R_MESSAGE_DIGEST_IS_NULL);
@@ -731,7 +814,12 @@ int EVP_MD_size(const EVP_MD *md)
     return md->md_size;
 }
 
-unsigned long EVP_MD_flags(const EVP_MD *md)
+int EVP_MD_xof(const EVP_MD *md)
+{
+    return md != NULL && ((EVP_MD_get_flags(md) & EVP_MD_FLAG_XOF) != 0);
+}
+
+unsigned long EVP_MD_get_flags(const EVP_MD *md)
 {
     return md->flags;
 }
@@ -743,6 +831,7 @@ EVP_MD *EVP_MD_meth_new(int md_type, int pkey_type)
     if (md != NULL) {
         md->type = md_type;
         md->pkey_type = pkey_type;
+        md->origin = EVP_ORIG_METH;
     }
     return md;
 }
@@ -759,18 +848,31 @@ EVP_MD *EVP_MD_meth_dup(const EVP_MD *md)
         return NULL;
 
     if ((to = EVP_MD_meth_new(md->type, md->pkey_type)) != NULL) {
-        CRYPTO_RWLOCK *lock = to->lock;
+        CRYPTO_REF_COUNT refcnt = to->refcnt;
 
         memcpy(to, md, sizeof(*to));
-        to->lock = lock;
+        to->refcnt = refcnt;
+        to->origin = EVP_ORIG_METH;
     }
     return to;
 }
 
+void evp_md_free_int(EVP_MD *md)
+{
+    OPENSSL_free(md->type_name);
+    ossl_provider_free(md->prov);
+    CRYPTO_FREE_REF(&md->refcnt);
+    OPENSSL_free(md);
+}
+
 void EVP_MD_meth_free(EVP_MD *md)
 {
-    EVP_MD_free(md);
+    if (md == NULL || md->origin != EVP_ORIG_METH)
+       return;
+
+    evp_md_free_int(md);
 }
+
 int EVP_MD_meth_set_input_blocksize(EVP_MD *md, int blocksize)
 {
     if (md->block_size != 0)
@@ -903,20 +1005,68 @@ int (*EVP_MD_meth_get_ctrl(const EVP_MD *md))(EVP_MD_CTX *ctx, int cmd,
     return md->md_ctrl;
 }
 
+#ifndef OPENSSL_NO_DEPRECATED_3_0
 const EVP_MD *EVP_MD_CTX_md(const EVP_MD_CTX *ctx)
 {
     if (ctx == NULL)
         return NULL;
     return ctx->reqdigest;
 }
+#endif
 
-EVP_PKEY_CTX *EVP_MD_CTX_pkey_ctx(const EVP_MD_CTX *ctx)
+const EVP_MD *EVP_MD_CTX_get0_md(const EVP_MD_CTX *ctx)
+{
+    if (ctx == NULL)
+        return NULL;
+    return ctx->reqdigest;
+}
+
+EVP_MD *EVP_MD_CTX_get1_md(EVP_MD_CTX *ctx)
+{
+    EVP_MD *md;
+
+    if (ctx == NULL)
+        return NULL;
+    md = (EVP_MD *)ctx->reqdigest;
+    if (md == NULL || !EVP_MD_up_ref(md))
+        return NULL;
+    return md;
+}
+
+int EVP_MD_CTX_get_size_ex(const EVP_MD_CTX *ctx)
+{
+    EVP_MD_CTX *c = (EVP_MD_CTX *)ctx;
+    const OSSL_PARAM *gettables;
+
+    gettables = EVP_MD_CTX_gettable_params(c);
+    if (gettables != NULL
+            && OSSL_PARAM_locate_const(gettables,
+                                       OSSL_DIGEST_PARAM_SIZE) != NULL) {
+        OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
+        size_t sz = 0;
+
+        /*
+         * For XOF's EVP_MD_get_size() returns 0
+         * So try to get the xoflen instead. This will return -1 if the
+         * xof length has not been set.
+         */
+        params[0] = OSSL_PARAM_construct_size_t(OSSL_DIGEST_PARAM_SIZE, &sz);
+        if (EVP_MD_CTX_get_params(c, params) != 1
+                || sz == SIZE_MAX
+                || sz == 0)
+            return -1;
+        return sz;
+    }
+    /* Normal digests have a constant fixed size output */
+    return EVP_MD_get_size(EVP_MD_CTX_get0_md(ctx));
+}
+
+EVP_PKEY_CTX *EVP_MD_CTX_get_pkey_ctx(const EVP_MD_CTX *ctx)
 {
     return ctx->pctx;
 }
 
 #if !defined(FIPS_MODULE)
-/* TODO(3.0): EVP_DigestSign* not yet supported in FIPS module */
 void EVP_MD_CTX_set_pkey_ctx(EVP_MD_CTX *ctx, EVP_PKEY_CTX *pctx)
 {
     /*
@@ -937,7 +1087,7 @@ void EVP_MD_CTX_set_pkey_ctx(EVP_MD_CTX *ctx, EVP_PKEY_CTX *pctx)
 }
 #endif /* !defined(FIPS_MODULE) */
 
-void *EVP_MD_CTX_md_data(const EVP_MD_CTX *ctx)
+void *EVP_MD_CTX_get0_md_data(const EVP_MD_CTX *ctx)
 {
     return ctx->md_data;
 }
@@ -970,20 +1120,39 @@ int EVP_MD_CTX_test_flags(const EVP_MD_CTX *ctx, int flags)
     return (ctx->flags & flags);
 }
 
+static int evp_cipher_ctx_enable_use_bits(EVP_CIPHER_CTX *ctx,
+                                          unsigned int enable)
+{
+    OSSL_PARAM params[] = { OSSL_PARAM_END, OSSL_PARAM_END };
+
+    params[0] = OSSL_PARAM_construct_uint(OSSL_CIPHER_PARAM_USE_BITS, &enable);
+    return EVP_CIPHER_CTX_set_params(ctx, params);
+}
+
 void EVP_CIPHER_CTX_set_flags(EVP_CIPHER_CTX *ctx, int flags)
 {
+    int oldflags = ctx->flags;
+
     ctx->flags |= flags;
+    if (((oldflags ^ ctx->flags) & EVP_CIPH_FLAG_LENGTH_BITS) != 0)
+        evp_cipher_ctx_enable_use_bits(ctx, 1);
 }
 
 void EVP_CIPHER_CTX_clear_flags(EVP_CIPHER_CTX *ctx, int flags)
 {
+    int oldflags = ctx->flags;
+
     ctx->flags &= ~flags;
+    if (((oldflags ^ ctx->flags) & EVP_CIPH_FLAG_LENGTH_BITS) != 0)
+        evp_cipher_ctx_enable_use_bits(ctx, 0);
 }
 
 int EVP_CIPHER_CTX_test_flags(const EVP_CIPHER_CTX *ctx, int flags)
 {
     return (ctx->flags & flags);
 }
+
+#if !defined(FIPS_MODULE)
 
 int EVP_PKEY_CTX_set_group_name(EVP_PKEY_CTX *ctx, const char *name)
 {
@@ -1024,3 +1193,299 @@ int EVP_PKEY_CTX_get_group_name(EVP_PKEY_CTX *ctx, char *name, size_t namelen)
         return -1;
     return 1;
 }
+
+/*
+ * evp_pkey_keygen() abstracts from the explicit use of B<EVP_PKEY_CTX>
+ * while providing a generic way of generating a new asymmetric key pair
+ * of algorithm type I<name> (e.g., C<RSA> or C<EC>).
+ * The library context I<libctx> and property query I<propq>
+ * are used when fetching algorithms from providers.
+ * The I<params> specify algorithm-specific parameters
+ * such as the RSA modulus size or the name of an EC curve.
+ */
+static EVP_PKEY *evp_pkey_keygen(OSSL_LIB_CTX *libctx, const char *name,
+                                 const char *propq, const OSSL_PARAM *params)
+{
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(libctx, name, propq);
+
+    if (ctx != NULL
+            && EVP_PKEY_keygen_init(ctx) > 0
+            && EVP_PKEY_CTX_set_params(ctx, params))
+        (void)EVP_PKEY_generate(ctx, &pkey);
+
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+}
+
+EVP_PKEY *EVP_PKEY_Q_keygen(OSSL_LIB_CTX *libctx, const char *propq,
+                            const char *type, ...)
+{
+    va_list args;
+    size_t bits;
+    char *name;
+    OSSL_PARAM params[] = { OSSL_PARAM_END, OSSL_PARAM_END };
+    EVP_PKEY *ret = NULL;
+
+    va_start(args, type);
+
+    if (OPENSSL_strcasecmp(type, "RSA") == 0) {
+        bits = va_arg(args, size_t);
+        params[0] = OSSL_PARAM_construct_size_t(OSSL_PKEY_PARAM_RSA_BITS, &bits);
+    } else if (OPENSSL_strcasecmp(type, "EC") == 0) {
+        name = va_arg(args, char *);
+        params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME,
+                                                     name, 0);
+    }
+
+    ret = evp_pkey_keygen(libctx, type, propq, params);
+
+    va_end(args);
+    return ret;
+}
+
+int EVP_CIPHER_CTX_set_algor_params(EVP_CIPHER_CTX *ctx, const X509_ALGOR *alg)
+{
+    int ret = -1;                /* Assume the worst */
+    unsigned char *der = NULL;
+    int derl = -1;
+
+    if ((derl = i2d_ASN1_TYPE(alg->parameter, &der)) >= 0) {
+        const char *k_old = OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS_OLD;
+        const char *k_new = OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS;
+        OSSL_PARAM params[3];
+
+        /*
+         * Passing the same data with both the old (deprecated) and the
+         * new AlgID parameters OSSL_PARAM key.
+         */
+        params[0] = OSSL_PARAM_construct_octet_string(k_old, der, (size_t)derl);
+        params[1] = OSSL_PARAM_construct_octet_string(k_new, der, (size_t)derl);
+        params[2] = OSSL_PARAM_construct_end();
+        ret = EVP_CIPHER_CTX_set_params(ctx, params);
+    }
+    OPENSSL_free(der);
+    return ret;
+}
+
+int EVP_CIPHER_CTX_get_algor_params(EVP_CIPHER_CTX *ctx, X509_ALGOR *alg)
+{
+    int ret = -1;                /* Assume the worst */
+    unsigned char *der = NULL;
+    size_t derl;
+    ASN1_TYPE *type = NULL;
+    int i = -1;
+    const char *k_old = OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS_OLD;
+    const char *k_new = OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS;
+    const char *derk;
+    OSSL_PARAM params[3];
+
+    /*
+     * We make two passes, the first to get the appropriate buffer size,
+     * and the second to get the actual value.
+     * Also, using both the old (deprecated) and the new AlgID parameters
+     * OSSL_PARAM key, and using whichever the provider responds to.
+     * Should the provider respond on both, the new key takes priority.
+     */
+    params[0] = OSSL_PARAM_construct_octet_string(k_old, NULL, 0);
+    params[1] = OSSL_PARAM_construct_octet_string(k_new, NULL, 0);
+    params[2] = OSSL_PARAM_construct_end();
+
+    if (!EVP_CIPHER_CTX_get_params(ctx, params))
+        goto err;
+
+    /* ... but, we should get a return size too! */
+    if (OSSL_PARAM_modified(&params[0]) && params[0].return_size != 0)
+        i = 0;
+    if (OSSL_PARAM_modified(&params[1]) && params[1].return_size != 0)
+        i = 1;
+    if (i < 0)
+        goto err;
+
+    /*
+     * If alg->parameter is non-NULL, it will be changed by d2i_ASN1_TYPE()
+     * below.  If it is NULL, the d2i_ASN1_TYPE() call will allocate new
+     * space for it.  Either way, alg->parameter can be safely assigned
+     * with type after the d2i_ASN1_TYPE() call, with the safety that it
+     * will be ok.
+     */
+    type = alg->parameter;
+
+    derk = params[i].key;
+    derl = params[i].return_size;
+    if ((der = OPENSSL_malloc(derl)) != NULL) {
+        unsigned char *derp = der;
+
+        params[i] = OSSL_PARAM_construct_octet_string(derk, der, derl);
+        if (EVP_CIPHER_CTX_get_params(ctx, params)
+            && OSSL_PARAM_modified(&params[i])
+            && d2i_ASN1_TYPE(&type, (const unsigned char **)&derp,
+                             (int)derl) != NULL) {
+            /*
+             * Don't free alg->parameter, see comment further up.
+             * Worst case, alg->parameter gets assigned its own value.
+             */
+            alg->parameter = type;
+            ret = 1;
+        }
+    }
+ err:
+    OPENSSL_free(der);
+    return ret;
+}
+
+int EVP_CIPHER_CTX_get_algor(EVP_CIPHER_CTX *ctx, X509_ALGOR **alg)
+{
+    int ret = -1;                /* Assume the worst */
+    OSSL_PARAM params[2];
+    size_t aid_len = 0;
+    const char *k_aid = OSSL_SIGNATURE_PARAM_ALGORITHM_ID;
+
+    params[0] = OSSL_PARAM_construct_octet_string(k_aid, NULL, 0);
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (EVP_CIPHER_CTX_get_params(ctx, params) <= 0)
+        goto err;
+
+    if (OSSL_PARAM_modified(&params[0]))
+        aid_len = params[0].return_size;
+    if (aid_len == 0) {
+        ERR_raise(ERR_LIB_EVP, EVP_R_GETTING_ALGORITHMIDENTIFIER_NOT_SUPPORTED);
+        ret = -2;
+        goto err;
+    }
+    if (alg != NULL) {
+        unsigned char *aid = NULL;
+        const unsigned char *pp = NULL;
+
+        if ((aid = OPENSSL_malloc(aid_len)) != NULL) {
+            params[0] = OSSL_PARAM_construct_octet_string(k_aid, aid, aid_len);
+            pp = aid;
+            if (EVP_CIPHER_CTX_get_params(ctx, params)
+                && OSSL_PARAM_modified(&params[0])
+                && d2i_X509_ALGOR(alg, &pp, aid_len) != NULL)
+                ret = 1;
+        }
+        OPENSSL_free(aid);
+    }
+ err:
+    return ret;
+}
+
+int EVP_PKEY_CTX_set_algor_params(EVP_PKEY_CTX *ctx, const X509_ALGOR *alg)
+{
+    int ret = -1;                /* Assume the worst */
+    unsigned char *der = NULL;
+    int derl = -1;
+
+    if ((derl = i2d_ASN1_TYPE(alg->parameter, &der)) >= 0) {
+        const char *k = OSSL_PKEY_PARAM_ALGORITHM_ID_PARAMS;
+        OSSL_PARAM params[2];
+
+        /*
+         * Passing the same data with both the old (deprecated) and the
+         * new AlgID parameters OSSL_PARAM key.
+         */
+        params[0] = OSSL_PARAM_construct_octet_string(k, der, (size_t)derl);
+        params[1] = OSSL_PARAM_construct_end();
+        ret = EVP_PKEY_CTX_set_params(ctx, params);
+    }
+    OPENSSL_free(der);
+    return ret;
+}
+
+int EVP_PKEY_CTX_get_algor_params(EVP_PKEY_CTX *ctx, X509_ALGOR *alg)
+{
+    int ret = -1;                /* Assume the worst */
+    OSSL_PARAM params[2];
+    unsigned char *der = NULL;
+    size_t derl;
+    ASN1_TYPE *type = NULL;
+    const char *k = OSSL_PKEY_PARAM_ALGORITHM_ID_PARAMS;
+
+    /*
+     * We make two passes, the first to get the appropriate buffer size,
+     * and the second to get the actual value.
+     * Also, using both the old (deprecated) and the new AlgID parameters
+     * OSSL_PARAM key, and using whichever the provider responds to.
+     * Should the provider respond on both, the new key takes priority.
+     */
+    params[0] = OSSL_PARAM_construct_octet_string(k, NULL, 0);
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (!EVP_PKEY_CTX_get_params(ctx, params))
+        goto err;
+
+    /*
+     * If alg->parameter is non-NULL, it will be changed by d2i_ASN1_TYPE()
+     * below.  If it is NULL, the d2i_ASN1_TYPE() call will allocate new
+     * space for it.  Either way, alg->parameter can be safely assigned
+     * with type after the d2i_ASN1_TYPE() call, with the safety that it
+     * will be ok.
+     */
+    type = alg->parameter;
+
+    derl = params[0].return_size;
+    if (OSSL_PARAM_modified(&params[0])
+        /* ... but, we should get a return size too! */
+        && derl != 0
+        && (der = OPENSSL_malloc(derl)) != NULL) {
+        unsigned char *derp = der;
+
+        params[0] = OSSL_PARAM_construct_octet_string(k, der, derl);
+        if (EVP_PKEY_CTX_get_params(ctx, params)
+            && OSSL_PARAM_modified(&params[0])
+            && d2i_ASN1_TYPE(&type, (const unsigned char **)&derp,
+                             derl) != NULL) {
+            /*
+             * Don't free alg->parameter, see comment further up.
+             * Worst case, alg->parameter gets assigned its own value.
+             */
+            alg->parameter = type;
+            ret = 1;
+        }
+    }
+ err:
+    OPENSSL_free(der);
+    return ret;
+}
+
+int EVP_PKEY_CTX_get_algor(EVP_PKEY_CTX *ctx, X509_ALGOR **alg)
+{
+    int ret = -1;                /* Assume the worst */
+    OSSL_PARAM params[2];
+    size_t aid_len = 0;
+    const char *k_aid = OSSL_SIGNATURE_PARAM_ALGORITHM_ID;
+
+    params[0] = OSSL_PARAM_construct_octet_string(k_aid, NULL, 0);
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (EVP_PKEY_CTX_get_params(ctx, params) <= 0)
+        goto err;
+
+    if (OSSL_PARAM_modified(&params[0]))
+        aid_len = params[0].return_size;
+    if (aid_len == 0) {
+        ERR_raise(ERR_LIB_EVP, EVP_R_GETTING_ALGORITHMIDENTIFIER_NOT_SUPPORTED);
+        ret = -2;
+        goto err;
+    }
+    if (alg != NULL) {
+        unsigned char *aid = NULL;
+        const unsigned char *pp = NULL;
+
+        if ((aid = OPENSSL_malloc(aid_len)) != NULL) {
+            params[0] = OSSL_PARAM_construct_octet_string(k_aid, aid, aid_len);
+            pp = aid;
+            if (EVP_PKEY_CTX_get_params(ctx, params)
+                && OSSL_PARAM_modified(&params[0])
+                && d2i_X509_ALGOR(alg, &pp, aid_len) != NULL)
+                ret = 1;
+        }
+        OPENSSL_free(aid);
+    }
+ err:
+    return ret;
+}
+
+#endif /* !defined(FIPS_MODULE) */

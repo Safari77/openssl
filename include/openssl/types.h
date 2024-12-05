@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2001-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,9 +7,21 @@
  * https://www.openssl.org/source/license.html
  */
 
+/*
+ * Unfortunate workaround to avoid symbol conflict with wincrypt.h
+ * See https://github.com/openssl/openssl/issues/9981
+ */
+#ifdef _WIN32
+# define WINCRYPT_USE_SYMBOL_PREFIX
+# undef X509_NAME
+# undef X509_EXTENSIONS
+# undef PKCS7_SIGNER_INFO
+# undef OCSP_REQUEST
+# undef OCSP_RESPONSE
+#endif
+
 #ifndef OPENSSL_TYPES_H
 # define OPENSSL_TYPES_H
-# pragma once
 
 # include <limits.h>
 
@@ -20,6 +32,12 @@ extern "C" {
 # include <openssl/e_os2.h>
 # include <openssl/safestack.h>
 # include <openssl/macros.h>
+
+# if OPENSSL_VERSION_MAJOR >= 4
+#  define OSSL_FUTURE_CONST const
+# else
+#  define OSSL_FUTURE_CONST
+# endif
 
 typedef struct ossl_provider_st OSSL_PROVIDER; /* Provider Object */
 
@@ -69,15 +87,6 @@ typedef struct asn1_string_table_st ASN1_STRING_TABLE;
 typedef struct ASN1_ITEM_st ASN1_ITEM;
 typedef struct asn1_pctx_st ASN1_PCTX;
 typedef struct asn1_sctx_st ASN1_SCTX;
-
-# ifdef _WIN32
-#  undef X509_NAME
-#  undef X509_EXTENSIONS
-#  undef PKCS7_ISSUER_AND_SERIAL
-#  undef PKCS7_SIGNER_INFO
-#  undef OCSP_REQUEST
-#  undef OCSP_RESPONSE
-# endif
 
 # ifdef BIGNUM
 #  undef BIGNUM
@@ -228,21 +237,6 @@ typedef struct ossl_decoder_st OSSL_DECODER;
 typedef struct ossl_decoder_ctx_st OSSL_DECODER_CTX;
 
 typedef struct ossl_self_test_st OSSL_SELF_TEST;
-
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L && \
-    defined(INTMAX_MAX) && defined(UINTMAX_MAX)
-typedef intmax_t ossl_intmax_t;
-typedef uintmax_t ossl_uintmax_t;
-#else
-/*
- * Not long long, because the C-library can only be expected to provide
- * strtoll(), strtoull() at the same time as intmax_t and strtoimax(),
- * strtoumax().  Since we use these for parsing arguments, we need the
- * conversion functions, not just the sizes.
- */
-typedef long ossl_intmax_t;
-typedef unsigned long ossl_uintmax_t;
-#endif
 
 #ifdef  __cplusplus
 }
