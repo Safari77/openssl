@@ -30,39 +30,70 @@ OpenSSL 3.5
 
 ### Changes between 3.4 and 3.5 [xx XXX xxxx]
 
-* For TLSv1.3: Add capability for a client to send multiple key shares. Extend the scope of
-  `SSL_OP_CIPHER_SERVER_PREFERENCE` to cover server-side key exchange group selection.
-  Extend the server-side key exchange group selection algorithm and related group list syntax
-  to support multiple group priorities, e.g. to prioritize (hybrid-)KEMs.
+* ML-KEM as specified in FIPS 203.
 
-  *David Kelsey*, *Martin Schmatz*
+  Based on the original implementation in BoringSSL, ported from C++ to C,
+  refactored, and integrated into the OpenSSL default and FIPS providers.
+  Including also the X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024
+  TLS hybrid key post-quantum/classical key agreement schemes.
+  *Michael Baentsch, Viktor Dukhovni, Shane Lontis and Paul Dale*
 
-* A new random generation API has been introduced which modifies all
-  of the L<RAND_bytes(3)> family of calls so they are routed through a
-  specific named provider instead of being resolved via the normal DRBG
-  chaining.  In a future OpenSSL release, this will obsolete RAND_METHOD.
+* Add ML-DSA as specified in FIPS 204.
 
-  *Dr Paul Dale*
+  The base code was derived from BoringSSL C++ code.
+  *Shane Lontis, Viktor Dukhovni and Paul Dale*
 
-* New inline functions were added to support loads and stores of unsigned
-  16-bit, 32-bit and 64-bit integers in either little-endian or big-endian
-  form, regardless of the host byte-order.  See the `OPENSSL_load_u16_le(3)`
-  manpage for details.
+ * Added new API calls to enable 3rd party QUIC stacks to use the OpenSSL TLS
+   implementation.
 
-  *Viktor Dukhovni*
+   *Matt Caswell*
 
-* All the BIO_meth_get_*() functions allowing reuse of the internal OpenSSL
-  BIO method implementations were deprecated. The reuse is unsafe due to
-  dependency on the code of the internal methods not changing.
+ * The default DRBG implementations have been changed to prefer to fetch
+   algorithm implementations from the default provider (the provider the
+   DRBG implementation is built in) regardless of the default properties
+   set in the configuration file. The code will still fallback to find
+   an implementation, as done previously, if needed.
 
-  *Tomáš Mráz*
+   *Simo Sorce*
 
-* Support DEFAULT keyword and '-' prefix in SSL_CTX_set1_groups_list().
-  SSL_CTX_set1_groups_list() now supports the DEFAULT keyword which sets the
-  available groups to the default selection. The '-' prefix allows the calling
-  application to remove a group from the selection.
+ * Initial support for opaque symmetric keys objects.  These replace the ad-hoc byte
+   arrays that are pervasive throughout the library.
 
-  *Frederik Wedel-Heinen*
+   *Dmitry Belyavskiy and Simo Sorce*
+
+ * For TLSv1.3: Add capability for a client to send multiple key shares. Extend the scope of
+   `SSL_OP_CIPHER_SERVER_PREFERENCE` to cover server-side key exchange group selection.
+   Extend the server-side key exchange group selection algorithm and related group list syntax
+   to support multiple group priorities, e.g. to prioritize (hybrid-)KEMs.
+
+   *David Kelsey*, *Martin Schmatz*
+
+ * A new random generation API has been introduced which modifies all
+   of the L<RAND_bytes(3)> family of calls so they are routed through a
+   specific named provider instead of being resolved via the normal DRBG
+   chaining.  In a future OpenSSL release, this will obsolete RAND_METHOD.
+
+   *Dr Paul Dale*
+
+ * New inline functions were added to support loads and stores of unsigned
+   16-bit, 32-bit and 64-bit integers in either little-endian or big-endian
+   form, regardless of the host byte-order.  See the `OPENSSL_load_u16_le(3)`
+   manpage for details.
+
+   *Viktor Dukhovni*
+
+ * All the BIO_meth_get_*() functions allowing reuse of the internal OpenSSL
+   BIO method implementations were deprecated. The reuse is unsafe due to
+   dependency on the code of the internal methods not changing.
+
+   *Tomáš Mráz*
+
+ * Support DEFAULT keyword and '-' prefix in SSL_CTX_set1_groups_list().
+   SSL_CTX_set1_groups_list() now supports the DEFAULT keyword which sets the
+   available groups to the default selection. The '-' prefix allows the calling
+   application to remove a group from the selection.
+
+   *Frederik Wedel-Heinen*
 
  * Updated the default encryption cipher for the `req`, `cms`, and `smime` applications
    from `des-ede3-cbc` to `aes-256-cbc`.

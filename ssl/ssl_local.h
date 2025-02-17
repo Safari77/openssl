@@ -38,6 +38,8 @@
 # include "internal/ssl.h"
 # include "internal/cryptlib.h"
 # include "record/record.h"
+# include "internal/quic_predef.h"
+# include "internal/quic_tls.h"
 
 # ifdef OPENSSL_BUILD_SHLIBSSL
 #  undef OPENSSL_EXTERN
@@ -1197,6 +1199,21 @@ struct ssl_ctx_st {
 # endif
 };
 
+typedef struct ossl_quic_tls_callbacks_st {
+    int (*crypto_send_cb)(SSL *s, const unsigned char *buf, size_t buf_len,
+                          size_t *consumed, void *arg);
+    int (*crypto_recv_rcd_cb)(SSL *s, const unsigned char **buf,
+                              size_t *bytes_read, void *arg);
+    int (*crypto_release_rcd_cb)(SSL *s, size_t bytes_read, void *arg);
+    int (*yield_secret_cb)(SSL *s, uint32_t prot_level, int direction,
+                           const unsigned char *secret, size_t secret_len,
+                           void *arg);
+    int (*got_transport_params_cb)(SSL *s, const unsigned char *params,
+                                   size_t params_len,
+                                   void *arg);
+    int (*alert_cb)(SSL *s, unsigned char alert_code, void *arg);
+} OSSL_QUIC_TLS_CALLBACKS;
+
 typedef struct cert_pkey_st CERT_PKEY;
 
 #define SSL_TYPE_SSL_CONNECTION  0
@@ -1279,6 +1296,11 @@ struct ssl_connection_st {
     size_t init_off;               /* amount read/written */
 
     size_t ssl_pkey_num;
+
+    /* QUIC TLS fields */
+    OSSL_QUIC_TLS_CALLBACKS qtcb;
+    void *qtarg;
+    QUIC_TLS *qtls;
 
     struct {
         long flags;
@@ -2817,6 +2839,11 @@ __owur int tls1_group_id2nid(uint16_t group_id, int include_unknown);
 __owur uint16_t tls1_nid2group_id(int nid);
 __owur int tls1_check_group_id(SSL_CONNECTION *s, uint16_t group_id,
                                int check_own_curves);
+__owur int tls1_get0_implemented_groups(int min_proto_version,
+                                        int max_proto_version,
+                                        TLS_GROUP_INFO *grps,
+                                        size_t num, long all,
+                                        STACK_OF(OPENSSL_CSTRING) *out);
 __owur uint16_t tls1_shared_group(SSL_CONNECTION *s, int nmatch);
 __owur int tls1_set_groups(uint16_t **grpext, size_t *grpextlen,
                            uint16_t **ksext, size_t *ksextlen,

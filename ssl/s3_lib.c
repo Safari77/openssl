@@ -3441,6 +3441,7 @@ void ssl3_free(SSL *s)
     ssl3_free_digest_list(sc);
     OPENSSL_free(sc->s3.alpn_selected);
     OPENSSL_free(sc->s3.alpn_proposed);
+    ossl_quic_tls_free(sc->qtls);
 
 #ifndef OPENSSL_NO_PSK
     OPENSSL_free(sc->s3.tmp.psk);
@@ -3778,7 +3779,7 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
             if (SSL_CONNECTION_IS_TLS13(sc) && sc->s3.did_kex)
                 id = sc->s3.group_id;
             else
-                id = sc->session->kex_group;
+                id = (sc->session != NULL) ? sc->session->kex_group : NID_undef;
             ret = tls1_group_id2nid(id, 1);
             break;
         }
@@ -3824,10 +3825,22 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
     case SSL_CTRL_GET_CHAIN_CERT_STORE:
         return ssl_cert_get_cert_store(sc->cert, parg, 1);
 
+    case SSL_CTRL_GET_PEER_SIGNATURE_NAME:
+        if (parg == NULL && sc->s3.tmp.peer_sigalg == NULL)
+            return 0;
+        *(const char **)parg = sc->s3.tmp.peer_sigalg->name;
+        return 1;
+
     case SSL_CTRL_GET_PEER_SIGNATURE_NID:
         if (sc->s3.tmp.peer_sigalg == NULL)
             return 0;
         *(int *)parg = sc->s3.tmp.peer_sigalg->hash;
+        return 1;
+
+    case SSL_CTRL_GET_SIGNATURE_NAME:
+        if (parg == NULL || sc->s3.tmp.sigalg == NULL)
+            return 0;
+        *(const char **)parg = sc->s3.tmp.sigalg->name;
         return 1;
 
     case SSL_CTRL_GET_SIGNATURE_NID:
@@ -4077,6 +4090,12 @@ long ssl3_ctx_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg)
                                     &ctx->ext.tuples,
                                     &ctx->ext.tuples_len,
                                     parg);
+
+    case SSL_CTRL_GET0_IMPLEMENTED_GROUPS:
+        return tls1_get0_implemented_groups(ctx->min_proto_version,
+                                            ctx->max_proto_version,
+                                            ctx->group_list,
+                                            ctx->group_list_len, larg, parg);
 
     case SSL_CTRL_SET_SIGALGS:
         return tls1_set_sigalgs(ctx->cert, parg, larg, 0);
