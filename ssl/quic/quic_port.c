@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2023-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -740,6 +740,21 @@ static void port_bind_channel(QUIC_PORT *port, const BIO_ADDR *peer,
 
     if (ch == NULL)
         return;
+
+    /*
+     * If we didn't provide a qrx here that means we need to set our initial
+     * secret here, since we just created a qrx
+     * Normally its not needed, as the initial secret gets added when we send
+     * our first server hello, but if we get a huge client hello, crossing
+     * multiple datagrams, we don't have a chance to do that, and datagrams
+     * after the first won't get decoded properly, for lack of secrets
+     */
+    if (qrx == NULL)
+        if (!ossl_quic_provide_initial_secret(ch->port->engine->libctx,
+                                              ch->port->engine->propq,
+                                              dcid, /* is_server */ 1,
+                                              ch->qrx, NULL))
+            return;
 
     if (odcid->id_len != 0) {
         /*

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -258,6 +258,12 @@ int ossl_qrx_read_pkt(OSSL_QRX *qrx, OSSL_QRX_PKT **pkt);
  * reference count drops to zero. No-op if pkt is NULL.
  */
 void ossl_qrx_pkt_release(OSSL_QRX_PKT *pkt);
+
+/*
+ * Like ossl_qrx_pkt_release, but just ensures that the refcount is dropped
+ * on this qrx_pkt, and ensure its not on any list
+ */
+void ossl_qrx_pkt_orphan(OSSL_QRX_PKT *pkt);
 
 /* Increments the reference count for the given packet. */
 void ossl_qrx_pkt_up_ref(OSSL_QRX_PKT *pkt);
