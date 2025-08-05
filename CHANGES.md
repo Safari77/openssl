@@ -31,6 +31,11 @@ OpenSSL 3.6
 
 ### Changes between 3.5 and 3.6 [xx XXX xxxx]
 
+ * The FIPS provider now performs a PCT on key import for RSA, EC and ECX.
+   This is mandated by FIPS 140-3 IG 10.3.A additional comment 1.
+
+   *Dr Paul Dale*
+
  * Introduce SSL_OP_SERVER_PREFERENCE superceding misleadingly
    named SSL_OP_CIPHER_SERVER_PREFERENCE.
 
@@ -132,6 +137,23 @@ OpenSSL 3.6
    while decryption speed increased by 20-23x.
 
    *Adrian Stanciu*
+
+ * Added support for TLS 1.3 OCSP multi-stapling for server certs.
+     * new `s_client` options:
+       * `-ocsp_check_leaf`: Checks the status of the leaf (server) certificate.
+       * `-ocsp_check_all`: Checks the status of all certificates in the server chain.
+     * new `s_server` option:
+       * `-status_all` Provides OCSP status information for the entire server certificate chain (multi-stapling) for TLS 1.3 and later.
+
+     * Improved `-status_file` option can now be given multiple times to provide
+       multiple files containing OCSP responses.
+
+   *Michael Krueger, Martin Rauch*
+
+ * Added KEMRecipientInfo (RFC 9629) and ML-KEM (draft-ietf-lamps-cms-kyber)
+   support to CMS.
+
+   *Daniel Van Geest (CryptoNext Security)*
 
 OpenSSL 3.5
 -----------
