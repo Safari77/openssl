@@ -82,8 +82,8 @@ struct helper {
 #if defined(OPENSSL_THREADS)
     struct child_thread_args    *threads;
     size_t                      num_threads;
-    CRYPTO_MUTEX		*misc_m;
-    CRYPTO_CONDVAR		*misc_cv;
+    CRYPTO_MUTEX                *misc_m;
+    CRYPTO_CONDVAR              *misc_cv;
 #endif
 
     OSSL_TIME       start_time;
@@ -1886,7 +1886,7 @@ static int run_script_worker(struct helper *h, const struct script_op *script,
                     goto out;
                 }
 
-                h->threads = OPENSSL_zalloc(op->arg1 * sizeof(struct child_thread_args));
+                h->threads = OPENSSL_calloc(op->arg1, sizeof(struct child_thread_args));
                 if (!TEST_ptr(h->threads))
                     goto out;
 
