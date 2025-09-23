@@ -121,6 +121,16 @@ providers/implementations/keymgmt/ml_kem_kmgmt.c
 providers/implementations/keymgmt/mlx_kmgmt.c
 providers/implementations/signature/dsa_sig.c
 providers/implementations/signature/ecdsa_sig.c
+providers/implementations/keymgmt/dh_kmgmt.c
+providers/implementations/keymgmt/dsa_kmgmt.c
+providers/implementations/keymgmt/ecx_kmgmt.c
+providers/implementations/keymgmt/lms_kmgmt.c
+providers/implementations/keymgmt/mac_legacy_kmgmt.c
+providers/implementations/keymgmt/ml_dsa_kmgmt.c
+providers/implementations/keymgmt/ml_kem_kmgmt.c
+providers/implementations/keymgmt/mlx_kmgmt.c
+providers/implementations/keymgmt/slh_dsa_kmgmt.c
+providers/implementations/keymgmt/template_kmgmt.c
 providers/implementations/signature/eddsa_sig.c
 providers/implementations/signature/ml_dsa_sig.c
 providers/implementations/signature/rsa_sig.c
@@ -220,11 +230,14 @@ providers/implementations/rands/test_rng.c
 /demos/guide/quic-client-non-block
 /demos/guide/quic-hq-interop
 /demos/guide/quic-multi-stream
+/demos/guide/quic-server-block
+/demos/guide/quic-server-non-block
 /demos/guide/tls-client-block
 /demos/guide/tls-client-non-block
 /demos/http3/libnghttp3.pc
 /demos/http3/nghttp3/
 /demos/http3/ossl-nghttp3-demo
+/demos/http3/ossl-nghttp3-demo-server
 /demos/kdf/argon2
 /demos/kdf/hkdf
 /demos/kdf/pbkdf2
@@ -240,6 +253,8 @@ providers/implementations/rands/test_rng.c
 /demos/pkey/EVP_PKEY_DSA_paramvalidate
 /demos/pkey/EVP_PKEY_EC_keygen
 /demos/pkey/EVP_PKEY_RSA_keygen
+/demos/quic/server/server
+/demos/quic/poll-server/quic-server-ssl-poll-http
 /demos/signature/EVP_DSA_Signature_demo
 /demos/signature/EVP_EC_Signature_demo
 /demos/signature/EVP_ED_Signature_demo
@@ -336,7 +351,7 @@ providers/implementations/rands/test_rng.c
 # Auto generated assembly language source files
 *.s
 !/crypto/*/asm/*.s
-/crypto/arm*.S
+/crypto/*.S
 /crypto/*/*.S
 *.asm
 !/crypto/*/asm/*.asm

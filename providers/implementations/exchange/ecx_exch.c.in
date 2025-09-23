@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -182,7 +182,7 @@ static void *ecx_dupctx(void *vecxctx)
 
 #ifdef FIPS_MODULE
 {- produce_param_decoder('ecx_get_ctx_params',
-                         (['ALG_PARAM_FIPS_APPROVED_INDICATOR', 'ind', 'int', 'fips'],
+                         (['OSSL_ALG_PARAM_FIPS_APPROVED_INDICATOR', 'ind', 'int', 'fips'],
                          )); -}
 #endif
 

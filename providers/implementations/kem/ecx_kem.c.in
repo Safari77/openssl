@@ -134,16 +134,15 @@ static ECX_KEY *ecxkey_pubfromdata(PROV_ECX_CTX *ctx,
                                    const unsigned char *pubbuf, size_t pubbuflen)
 {
     ECX_KEY *ecx = NULL;
-    OSSL_PARAM params[2], *p = params;
+    OSSL_PARAM pub;
 
-    *p++ = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
-                                             (char *)pubbuf, pubbuflen);
-    *p = OSSL_PARAM_construct_end();
+    pub = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
+                                            (char *)pubbuf, pubbuflen);
 
     ecx = ossl_ecx_key_new(ctx->libctx, ctx->recipient_key->type, 1, ctx->propq);
     if (ecx == NULL)
         return NULL;
-    if (ossl_ecx_key_fromdata(ecx, params, 0) <= 0) {
+    if (ossl_ecx_key_fromdata(ecx, &pub, NULL, 0) <= 0) {
         ossl_ecx_key_free(ecx);
         ecx = NULL;
     }
@@ -246,8 +245,8 @@ static int ecxkem_auth_decapsulate_init(void *vctx, void *vecx, void *vauthpub,
 }
 
 {- produce_param_decoder('ecxkem_set_ctx_params',
-                         (['KEM_PARAM_OPERATION',   'op',   'utf8_string'],
-                          ['KEM_PARAM_IKME',        'ikme', 'octet_string'],
+                         (['OSSL_KEM_PARAM_OPERATION',   'op',   'utf8_string'],
+                          ['OSSL_KEM_PARAM_IKME',        'ikme', 'octet_string'],
                          )); -}
 
 static int ecxkem_set_ctx_params(void *vctx, const OSSL_PARAM params[])

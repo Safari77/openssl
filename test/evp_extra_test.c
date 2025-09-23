@@ -3944,6 +3944,48 @@ static int test_RSA_OAEP_set_null_label(void)
     return ret;
 }
 
+static int test_RSA_encrypt(void)
+{
+    int ret = 0;
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = NULL;
+    unsigned char *cbuf = NULL, *pbuf = NULL;
+    size_t clen = 0, plen = 0;
+
+    if (!TEST_ptr(pkey = load_example_rsa_key())
+        || !TEST_ptr(pctx = EVP_PKEY_CTX_new_from_pkey(testctx,
+                                                       pkey, testpropq))
+        || !TEST_int_gt(EVP_PKEY_encrypt_init(pctx), 0)
+        || !TEST_int_gt(EVP_PKEY_encrypt(pctx, cbuf, &clen, kMsg, sizeof(kMsg)), 0)
+        || !TEST_ptr(cbuf = OPENSSL_malloc(clen))
+        || !TEST_int_gt(EVP_PKEY_encrypt(pctx, cbuf, &clen, kMsg, sizeof(kMsg)), 0))
+        goto done;
+
+    /* Require failure when the output buffer is too small */
+    plen = clen - 1;
+    if (!TEST_int_le(EVP_PKEY_encrypt(pctx, cbuf, &plen, kMsg, sizeof(kMsg)), 0))
+        goto done;
+    /* flush error stack */
+    TEST_openssl_errors();
+
+    /* Check decryption of encrypted result */
+    if (!TEST_int_gt(EVP_PKEY_decrypt_init(pctx), 0)
+        || !TEST_int_gt(EVP_PKEY_decrypt(pctx, pbuf, &plen, cbuf, clen), 0)
+        || !TEST_ptr(pbuf = OPENSSL_malloc(plen))
+        || !TEST_int_gt(EVP_PKEY_decrypt(pctx, pbuf, &plen, cbuf, clen), 0)
+        || !TEST_mem_eq(pbuf, plen, kMsg, sizeof(kMsg))
+        || !TEST_int_gt(EVP_PKEY_encrypt_init(pctx), 0))
+        goto done;
+
+    ret = 1;
+done:
+    EVP_PKEY_CTX_free(pctx);
+    EVP_PKEY_free(pkey);
+    OPENSSL_free(cbuf);
+    OPENSSL_free(pbuf);
+    return ret;
+}
+
 #ifndef OPENSSL_NO_DEPRECATED_3_0
 static int test_RSA_legacy(void)
 {
@@ -5798,6 +5840,8 @@ static int test_custom_md_meth(void)
     nid = OBJ_create("1.3.6.1.4.1.16604.998866.1", "custom-md", "custom-md");
     if (!TEST_int_ne(nid, NID_undef))
         goto err;
+    if (!TEST_int_eq(OBJ_txt2nid("1.3.6.1.4.1.16604.998866.1"), nid))
+        goto err;
     tmp = EVP_MD_meth_new(nid, NID_undef);
     if (!TEST_ptr(tmp))
         goto err;
@@ -5892,6 +5936,8 @@ static int test_custom_ciph_meth(void)
 
     nid = OBJ_create("1.3.6.1.4.1.16604.998866.2", "custom-ciph", "custom-ciph");
     if (!TEST_int_ne(nid, NID_undef))
+        goto err;
+    if (!TEST_int_eq(OBJ_txt2nid("1.3.6.1.4.1.16604.998866.2"), nid))
         goto err;
     tmp = EVP_CIPHER_meth_new(nid, 16, 16);
     if (!TEST_ptr(tmp))
@@ -6831,6 +6877,7 @@ int setup_tests(void)
     ADD_TEST(test_RSA_get_set_params);
     ADD_TEST(test_RSA_OAEP_set_get_params);
     ADD_TEST(test_RSA_OAEP_set_null_label);
+    ADD_TEST(test_RSA_encrypt);
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     ADD_TEST(test_RSA_legacy);
 #endif

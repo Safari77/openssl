@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -94,7 +94,7 @@ static void key2ms_freectx(void *vctx)
 }
 
 {- produce_param_decoder('key2pvk_set_ctx_params',
-                         (['ENCODER_PARAM_ENCRYPT_LEVEL', 'enclvl', 'int'],
+                         (['OSSL_ENCODER_PARAM_ENCRYPT_LEVEL', 'enclvl', 'int'],
                          )); -}
 
 static const OSSL_PARAM *key2pvk_settable_ctx_params(ossl_unused void *provctx)

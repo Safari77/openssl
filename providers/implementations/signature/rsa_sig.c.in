@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -414,7 +414,7 @@ static int rsa_setup_md(PROV_RSA_CTX *ctx, const char *mdname,
             if (!ossl_fips_ind_digest_sign_check(OSSL_FIPS_IND_GET(ctx),
                                                  OSSL_FIPS_IND_SETTABLE1,
                                                  ctx->libctx,
-                                                 md_nid, sha1_allowed, desc,
+                                                 md_nid, sha1_allowed, 1, desc,
                                                  ossl_fips_config_signature_digest_check))
                 goto err;
         }
@@ -955,7 +955,7 @@ static int rsa_verify_recover(void *vprsactx,
                 return 0;
             ret = RSA_public_decrypt((int)siglen, sig, prsactx->tbuf, prsactx->rsa,
                                      RSA_X931_PADDING);
-            if (ret < 1) {
+            if (ret <= 0) {
                 ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
                 return 0;
             }
@@ -1005,7 +1005,7 @@ static int rsa_verify_recover(void *vprsactx,
     } else {
         ret = RSA_public_decrypt((int)siglen, sig, rout, prsactx->rsa,
                                  prsactx->pad_mode);
-        if (ret < 0) {
+        if (ret <= 0) {
             ERR_raise(ERR_LIB_PROV, ERR_R_RSA_LIB);
             return 0;
         }
@@ -1386,15 +1386,15 @@ static void *rsa_dupctx(void *vprsactx)
 }
 
 {- produce_param_decoder('rsa_get_ctx_params',
-                         (['SIGNATURE_PARAM_ALGORITHM_ID',            'algid',  'octet_string'],
-                          ['SIGNATURE_PARAM_PAD_MODE',                'pad',    'utf8_string'],
-                          ['SIGNATURE_PARAM_PAD_MODE',                'pad',    'int'],
-                          ['SIGNATURE_PARAM_DIGEST',                  'digest', 'utf8_string'],
-                          ['SIGNATURE_PARAM_MGF1_DIGEST',             'mgf1',   'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',             'slen',   'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',             'slen',   'int'],
-                          ['SIGNATURE_PARAM_FIPS_VERIFY_MESSAGE',     'verify', 'uint', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_APPROVED_INDICATOR', 'ind',    'int', 'fips'],
+                         (['OSSL_SIGNATURE_PARAM_ALGORITHM_ID',            'algid',  'octet_string'],
+                          ['OSSL_SIGNATURE_PARAM_PAD_MODE',                'pad',    'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PAD_MODE',                'pad',    'int'],
+                          ['OSSL_SIGNATURE_PARAM_DIGEST',                  'digest', 'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_MGF1_DIGEST',             'mgf1',   'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',             'slen',   'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',             'slen',   'int'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_VERIFY_MESSAGE',     'verify', 'uint', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_APPROVED_INDICATOR', 'ind',    'int', 'fips'],
                          )); -}
 
 static int rsa_get_ctx_params(void *vprsactx, OSSL_PARAM *params)
@@ -1520,33 +1520,33 @@ static int rsa_x931_padding_allowed(PROV_RSA_CTX *ctx)
 #endif
 
 {- produce_param_decoder('rsa_set_ctx_params',
-                         (['SIGNATURE_PARAM_DIGEST',                     'digest',   'utf8_string'],
-                          ['SIGNATURE_PARAM_PROPERTIES',                 'propq',    'utf8_string'],
-                          ['SIGNATURE_PARAM_PAD_MODE',                   'pad',      'utf8_string'],
-                          ['SIGNATURE_PARAM_PAD_MODE',                   'pad',      'int'],
-                          ['SIGNATURE_PARAM_MGF1_DIGEST',                'mgf1',     'utf8_string'],
-                          ['SIGNATURE_PARAM_MGF1_PROPERTIES',            'mgf1pq',   'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'int'],
-                          ['SIGNATURE_PARAM_FIPS_KEY_CHECK',             'ind_k',    'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_DIGEST_CHECK',          'ind_d',    'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_RSA_PSS_SALTLEN_CHECK', 'ind_slen', 'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_SIGN_X931_PAD_CHECK',   'ind_xpad', 'int', 'fips'],
+                         (['OSSL_SIGNATURE_PARAM_DIGEST',                     'digest',   'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PROPERTIES',                 'propq',    'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PAD_MODE',                   'pad',      'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PAD_MODE',                   'pad',      'int'],
+                          ['OSSL_SIGNATURE_PARAM_MGF1_DIGEST',                'mgf1',     'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_MGF1_PROPERTIES',            'mgf1pq',   'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'int'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_KEY_CHECK',             'ind_k',    'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_DIGEST_CHECK',          'ind_d',    'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_RSA_PSS_SALTLEN_CHECK', 'ind_slen', 'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_SIGN_X931_PAD_CHECK',   'ind_xpad', 'int', 'fips'],
                          )); -}
 
 #define rsa_set_ctx_params_no_digest_st  rsa_set_ctx_params_st
 
 {- produce_param_decoder('rsa_set_ctx_params_no_digest',
-                         (['SIGNATURE_PARAM_PAD_MODE',                   'pad',      'utf8_string'],
-                          ['SIGNATURE_PARAM_PAD_MODE',                   'pad',      'int'],
-                          ['SIGNATURE_PARAM_MGF1_DIGEST',                'mgf1',     'utf8_string'],
-                          ['SIGNATURE_PARAM_MGF1_PROPERTIES',            'mgf1pq',   'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'utf8_string'],
-                          ['SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'int'],
-                          ['SIGNATURE_PARAM_FIPS_KEY_CHECK',             'ind_k',    'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_DIGEST_CHECK',          'ind_d',    'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_RSA_PSS_SALTLEN_CHECK', 'ind_slen', 'int', 'fips'],
-                          ['SIGNATURE_PARAM_FIPS_SIGN_X931_PAD_CHECK',   'ind_xpad', 'int', 'fips'],
+                         (['OSSL_SIGNATURE_PARAM_PAD_MODE',                   'pad',      'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PAD_MODE',                   'pad',      'int'],
+                          ['OSSL_SIGNATURE_PARAM_MGF1_DIGEST',                'mgf1',     'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_MGF1_PROPERTIES',            'mgf1pq',   'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'utf8_string'],
+                          ['OSSL_SIGNATURE_PARAM_PSS_SALTLEN',                'slen',     'int'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_KEY_CHECK',             'ind_k',    'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_DIGEST_CHECK',          'ind_d',    'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_RSA_PSS_SALTLEN_CHECK', 'ind_slen', 'int', 'fips'],
+                          ['OSSL_SIGNATURE_PARAM_FIPS_SIGN_X931_PAD_CHECK',   'ind_xpad', 'int', 'fips'],
                          )); -}
 
 static int rsa_set_ctx_params(void *vprsactx, const OSSL_PARAM params[])
@@ -1950,7 +1950,7 @@ static const char **rsa_sigalg_query_key_types(void)
 }
 
 {- produce_param_decoder('rsa_sigalg_set_ctx_params',
-                         (['SIGNATURE_PARAM_SIGNATURE', 'sig', 'octet_string'],
+                         (['OSSL_SIGNATURE_PARAM_SIGNATURE', 'sig', 'octet_string'],
                          )); -}
 
 static const OSSL_PARAM *rsa_sigalg_settable_ctx_params(void *vprsactx,

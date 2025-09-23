@@ -4446,7 +4446,7 @@ void SSL_CTX_free(SSL_CTX *a)
     OPENSSL_free(a->ext.keyshares);
     OPENSSL_free(a->ext.tuples);
     OPENSSL_free(a->ext.alpn);
-    OPENSSL_secure_free(a->ext.secure);
+    OPENSSL_secure_clear_free(a->ext.secure, sizeof(*a->ext.secure));
 
     ssl_evp_md_free(a->md5);
     ssl_evp_md_free(a->sha1);
@@ -6461,9 +6461,6 @@ static int ct_extract_ocsp_response_scts(SSL_CONNECTION *s)
 
             scts = OCSP_SINGLERESP_get1_ext_d2i(single,
                                                 NID_ct_cert_scts, NULL, NULL);
-
-            OCSP_SINGLERESP_free(single);
-
             if (scts == NULL)  {
                 scts_extracted = -1;
                 goto err;

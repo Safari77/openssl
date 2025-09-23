@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -109,8 +109,8 @@ static void *winstore_attach(void *provctx, OSSL_CORE_BIO *cin)
 }
 
 {- produce_param_decoder('winstore_set_ctx_params',
-                         (['STORE_PARAM_SUBJECT',    'sub',   'octet_string'],
-                          ['STORE_PARAM_PROPERTIES', 'propq', 'utf8_string'],
+                         (['OSSL_STORE_PARAM_SUBJECT',    'sub',   'octet_string'],
+                          ['OSSL_STORE_PARAM_PROPERTIES', 'propq', 'utf8_string'],
                          )); -}
 
 static const OSSL_PARAM *winstore_settable_ctx_params(void *loaderctx, const OSSL_PARAM params[])
