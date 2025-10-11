@@ -2478,7 +2478,7 @@ static void ch_rx_handle_packet(QUIC_CHANNEL *ch, int channel_only)
         while (PACKET_remaining(&vpkt) > 0) {
             /*
              * We only support quic version 1 at the moment, so
-             * look to see if thats offered
+             * look to see if that's offered
              */
             if (!PACKET_get_net_4(&vpkt, &supported_ver))
                 return;
@@ -3718,7 +3718,7 @@ static int ch_on_new_conn_common(QUIC_CHANNEL *ch, const BIO_ADDR *peer,
                                  const QUIC_CONN_ID *peer_odcid)
 {
     /* Note our newly learnt peer address and CIDs. */
-    if (!BIO_ADDR_copy(&ch->cur_peer_addr, peer))
+    if (!ossl_quic_channel_set_peer_addr(ch, peer))
         return 0;
 
     ch->init_dcid       = *peer_dcid;

@@ -3962,8 +3962,8 @@ static long check_keylog_bio_free(BIO *b, int oper, const char *argp,
     /*
      * Note we _dont_ take the keylog_lock here
      * This is intentional, because we only free the keylog lock
-     * During SSL_CTX_free, in which we already posess the lock, so
-     * Theres no need to grab it again here
+     * During SSL_CTX_free, in which we already possess the lock, so
+     * There's no need to grab it again here
      */
     if (oper == BIO_CB_FREE)
         keylog_bio = NULL;
@@ -4319,7 +4319,7 @@ SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
         /* Make sure we have a global lock allocated */
         if (!RUN_ONCE(&ssl_keylog_once, ssl_keylog_init)) {
             /* use a trace message as a warning */
-            OSSL_TRACE(TLS, "Unable to initalize keylog data\n");
+            OSSL_TRACE(TLS, "Unable to initialize keylog data\n");
             goto out;
         }
 
@@ -8100,6 +8100,18 @@ size_t SSL_get_accept_connection_queue_len(SSL *ssl)
         return 0;
 
     return ossl_quic_get_accept_connection_queue_len(ssl);
+#else
+    return 0;
+#endif
+}
+
+int SSL_get_peer_addr(SSL *ssl, BIO_ADDR *peer_addr)
+{
+#ifndef OPENSSL_NO_QUIC
+    if (!IS_QUIC(ssl))
+        return 0;
+
+    return ossl_quic_get_peer_addr(ssl, peer_addr);
 #else
     return 0;
 #endif
