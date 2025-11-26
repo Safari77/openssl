@@ -32,6 +32,17 @@ OpenSSL 4.0
 
 ### Changes between 3.6 and 4.0 [xx XXX xxxx]
 
+ * Removed extra leading '00:' when printing key data such as an RSA modulus
+   in hexadecimal format where the first (most significant) byte is >= 0x80.
+   This had been added artificially to resemble ASN.1 DER encoding internals.
+   Fixing this also makes sure that key output always has the expected length.
+
+   *David von Oheimb*
+
+ * The deprecated function ASN1_STRING_data has been removed.
+
+   *Bob Beck*
+
  * various function parameters have been constified,
    in particular for X509-related functions.
 
@@ -45,6 +56,17 @@ OpenSSL 4.0
    verify_return_error is enabled.
 
    *Ryan Hooper*
+
+ * Added `OSSL_[EN|DE]CODER_CTX_[set|get]_finalized()` functions.
+   `OSSL_[EN|DE]CODER_CTX_set_*()` and `OSSL_[EN|DE]CODER_CTX_add_*()`
+   functions return 0 if the context is already finalised.
+
+   *Igor Ustinov*
+
+ * Reject CRLs with a Certificate Issuer extension in a certificate revocation
+   entry unless the Indirect flag is set to TRUE in the IDP extension of the CRL.
+
+   *Daniel Kubec*
 
 OpenSSL 3.6
 -----------

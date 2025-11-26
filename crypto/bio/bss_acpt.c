@@ -248,6 +248,8 @@ static int acpt_state(BIO *b, BIO_ACCEPT *c)
                                 BIO_ADDRINFO_address(c->addr_iter),
                                 c->bind_mode)) {
                     BIO_closesocket(c->accept_sock);
+                    c->accept_sock = (int)INVALID_SOCKET;
+                    b->num = (int)INVALID_SOCKET;
                     goto exit_loop;
                 }
             }
@@ -259,6 +261,8 @@ static int acpt_state(BIO *b, BIO_ACCEPT *c)
                 if (!BIO_sock_info(c->accept_sock, BIO_SOCK_INFO_ADDRESS,
                                    &info)) {
                     BIO_closesocket(c->accept_sock);
+                    c->accept_sock = (int)INVALID_SOCKET;
+                    b->num = (int)INVALID_SOCKET;
                     goto exit_loop;
                 }
             }
@@ -436,7 +440,8 @@ static long acpt_ctrl(BIO *b, int cmd, long num, void *ptr)
                                          BIO_PARSE_PRIO_SERV);
                 if (hold_serv != data->param_serv)
                     OPENSSL_free(hold_serv);
-                b->init = 1;
+                if (ret > 0)
+                    b->init = 1;
             } else if (num == 1) {
                 OPENSSL_free(data->param_serv);
                 if ((data->param_serv = OPENSSL_strdup(ptr)) == NULL)
