@@ -22,7 +22,6 @@
 #include <openssl/dh.h>
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
-#include <openssl/engine.h>
 #include <openssl/trace.h>
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
@@ -2942,29 +2941,30 @@ int tls_process_cert_status_body(SSL_CONNECTION *s, size_t chainidx, PACKET *pkt
             return 0;
         }
 
-        if (resplen > 0) {
-            respder = OPENSSL_malloc(resplen);
-
-            if (respder == NULL) {
-                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
-                return 0;
-            }
-
-            if (!PACKET_copy_bytes(pkt, respder, resplen)) {
-                SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_LENGTH_MISMATCH);
-                OPENSSL_free(respder);
-                return 0;
-            }
-            p = respder;
-            resp = d2i_OCSP_RESPONSE(NULL, &p, (long)resplen);
-            OPENSSL_free(respder);
-            if (resp == NULL) {
-                SSLfatal(s, TLS1_AD_BAD_CERTIFICATE_STATUS_RESPONSE,
-                         SSL_R_TLSV1_BAD_CERTIFICATE_STATUS_RESPONSE);
-                return 0;
-            }
-            sk_OCSP_RESPONSE_insert(s->ext.ocsp.resp_ex, resp, (int)chainidx);
+        if (resplen == 0) {
+            SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_BAD_PACKET);
+            return 0;
         }
+
+        if ((respder = OPENSSL_malloc(resplen)) == NULL) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+            return 0;
+        }
+
+        if (!PACKET_copy_bytes(pkt, respder, resplen)) {
+            SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_LENGTH_MISMATCH);
+            OPENSSL_free(respder);
+            return 0;
+        }
+        p = respder;
+        resp = d2i_OCSP_RESPONSE(NULL, &p, (long)resplen);
+        OPENSSL_free(respder);
+        if (resp == NULL) {
+            SSLfatal(s, TLS1_AD_BAD_CERTIFICATE_STATUS_RESPONSE,
+                     SSL_R_TLSV1_BAD_CERTIFICATE_STATUS_RESPONSE);
+            return 0;
+        }
+        sk_OCSP_RESPONSE_insert(s->ext.ocsp.resp_ex, resp, (int)chainidx);
     }
 
 #endif
@@ -3454,8 +3454,7 @@ int ossl_gost_ukm(const SSL_CONNECTION *s, unsigned char *dgst_buf)
     EVP_MD_CTX *hash = NULL;
     unsigned int md_len;
     SSL_CTX *sctx = SSL_CONNECTION_GET_CTX(s);
-    const EVP_MD *md = ssl_evp_md_fetch(sctx->libctx, NID_id_GostR3411_2012_256,
-                                        sctx->propq);
+    const EVP_MD *md = EVP_MD_fetch(sctx->libctx, "md_gost12_256", sctx->propq);
 
     if (md == NULL)
         return 0;
@@ -3533,7 +3532,7 @@ static int tls_construct_cke_gost18(SSL_CONNECTION *s, WPACKET *pkt)
         goto err;
     };
 
-    /* Reuse EVP_PKEY_CTRL_SET_IV, make choice in engine code */
+    /* Reuse EVP_PKEY_CTRL_SET_IV */
     if (EVP_PKEY_CTX_ctrl(pkey_ctx, -1, EVP_PKEY_OP_ENCRYPT,
                           EVP_PKEY_CTRL_SET_IV, 32, rnd_dgst) <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_R_LIBRARY_BUG);
@@ -4126,13 +4125,6 @@ int ssl_do_client_cert_cb(SSL_CONNECTION *s, X509 **px509, EVP_PKEY **ppkey)
     int i = 0;
     SSL_CTX *sctx = SSL_CONNECTION_GET_CTX(s);
 
-#ifndef OPENSSL_NO_ENGINE
-    if (sctx->client_cert_engine) {
-        i = tls_engine_load_ssl_client_cert(s, px509, ppkey);
-        if (i != 0)
-            return i;
-    }
-#endif
     if (sctx->client_cert_cb)
         i = sctx->client_cert_cb(SSL_CONNECTION_GET_USER_SSL(s), px509, ppkey);
     return i;

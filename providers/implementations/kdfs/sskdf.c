@@ -537,7 +537,6 @@ static int x963kdf_derive(void *vctx, unsigned char *key, size_t keylen,
 struct sskdf_all_set_ctx_params_st {
     OSSL_PARAM *secret;
     OSSL_PARAM *propq;
-    OSSL_PARAM *engine;
     OSSL_PARAM *digest;
     OSSL_PARAM *mac;
     OSSL_PARAM *salt;
@@ -565,7 +564,7 @@ static int sskdf_common_set_ctx_params
     int r;
 
     if (!ossl_prov_macctx_load(&ctx->macctx,
-                               p->mac, NULL, p->digest, p->propq, p->engine,
+                               p->mac, NULL, p->digest, p->propq,
                                NULL, NULL, NULL, libctx))
         return 0;
     if (ctx->macctx != NULL) {
@@ -578,8 +577,7 @@ static int sskdf_common_set_ctx_params
     }
 
     if (p->digest != NULL) {
-        if (!ossl_prov_digest_load(&ctx->digest, p->digest,
-                                   p->propq, p->engine, libctx))
+        if (!ossl_prov_digest_load(&ctx->digest, p->digest, p->propq, libctx))
             return 0;
 
         md = ossl_prov_digest_md(&ctx->digest);

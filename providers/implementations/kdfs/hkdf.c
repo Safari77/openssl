@@ -264,7 +264,6 @@ static int kdf_hkdf_derive(void *vctx, unsigned char *key, size_t keylen,
 struct hkdf_all_set_ctx_params_st {
     OSSL_PARAM *mode;
     OSSL_PARAM *propq;
-    OSSL_PARAM *engine;
     OSSL_PARAM *digest;
     OSSL_PARAM *key;
     OSSL_PARAM *salt;
@@ -294,8 +293,7 @@ static int hkdf_common_set_ctx_params
     if (p->digest != NULL) {
         const EVP_MD *md = NULL;
 
-        if (!ossl_prov_digest_load(&ctx->digest, p->digest,
-                                   p->propq, p->engine, libctx))
+        if (!ossl_prov_digest_load(&ctx->digest, p->digest, p->propq, libctx))
             return 0;
 
         md = ossl_prov_digest_md(&ctx->digest);
@@ -488,7 +486,7 @@ static void *kdf_hkdf_fixed_digest_new(void *provctx, const char *digest)
 
     param = OSSL_PARAM_construct_utf8_string(OSSL_ALG_PARAM_DIGEST,
                                              (char *)digest, 0);
-    if (!ossl_prov_digest_load(&ctx->digest, &param, NULL, NULL, libctx)) {
+    if (!ossl_prov_digest_load(&ctx->digest, &param, NULL, libctx)) {
         kdf_hkdf_free(ctx);
         return NULL;
     }

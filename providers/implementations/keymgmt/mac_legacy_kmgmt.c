@@ -7,9 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-/* We need to use some engine deprecated APIs */
-#define OPENSSL_SUPPRESS_DEPRECATED
-
 #include <string.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
@@ -18,9 +15,6 @@
 #include <openssl/evp.h>
 #include <openssl/proverr.h>
 #include <openssl/param_build.h>
-#ifndef FIPS_MODULE
-# include <openssl/engine.h>
-#endif
 #include "internal/param_build_set.h"
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
@@ -186,7 +180,6 @@ struct mac_common_params_st {
     OSSL_PARAM *key;
     OSSL_PARAM *cipher; /* CMAC */
     OSSL_PARAM *propq;
-    OSSL_PARAM *engine;
 };
 
 #define mac_import_st mac_common_params_st
@@ -228,7 +221,7 @@ static int mac_key_fromdata(MAC_KEY *key, const struct mac_common_params_st *p)
     }
 
     if (key->cmac && !ossl_prov_cipher_load(&key->cipher, p->cipher, p->propq,
-                                            p->engine, key->libctx)) {
+                                            key->libctx)) {
         ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_INVALID_ARGUMENT);
         return 0;
     }
@@ -300,14 +293,6 @@ static int key_to_params(MAC_KEY *key, OSSL_PARAM_BLD *tmpl,
                                              OSSL_PKEY_PARAM_CIPHER,
                                              EVP_CIPHER_get0_name(key->cipher.cipher)))
         return 0;
-
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    if (key->cipher.engine != NULL
-        && !ossl_param_build_set_utf8_string(tmpl, p->engine,
-                                             OSSL_PKEY_PARAM_ENGINE,
-                                             ENGINE_get_id(key->cipher.engine)))
-        return 0;
-#endif
 
     return 1;
 }
@@ -475,7 +460,7 @@ static int cmac_gen_set_params(void *genctx, const OSSL_PARAM params[])
         return 0;
 
     if (!ossl_prov_cipher_load(&gctx->cipher, p.cipher, p.propq,
-                               p.engine, gctx->libctx)) {
+                               gctx->libctx)) {
         ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_INVALID_ARGUMENT);
         return 0;
     }

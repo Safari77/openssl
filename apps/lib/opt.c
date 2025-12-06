@@ -192,7 +192,7 @@ char *opt_init(int ac, char **av, const OPTIONS *o)
             OPENSSL_assert(o->retval == OPT_DUP || o->retval > OPT_PARAM);
         switch (i) {
         case   0: case '-': case '.':
-        case '/': case '<': case '>': case 'E': case 'F':
+        case '/': case '<': case '>': case 'F':
         case 'M': case 'U': case 'f': case 'l': case 'n': case 'p': case 's':
         case 'u': case 'c': case ':': case 'N': case 'A':
             break;
@@ -230,7 +230,6 @@ static OPT_PAIR formats[] = {
     {"b64", OPT_FMT_B64},
     {"pkcs12", OPT_FMT_PKCS12},
     {"smime", OPT_FMT_SMIME},
-    {"engine", OPT_FMT_ENGINE},
     {"msblob", OPT_FMT_MSBLOB},
     {"nss", OPT_FMT_NSS},
     {"text", OPT_FMT_TEXT},
@@ -309,12 +308,6 @@ int opt_format(const char *s, unsigned long flags, int *result)
             return opt_format_error(s, flags);
         *result = FORMAT_MSBLOB;
         break;
-    case 'E':
-    case 'e':
-        if ((flags & OPT_FMT_ENGINE) == 0)
-            return opt_format_error(s, flags);
-        *result = FORMAT_ENGINE;
-        break;
     case 'H':
     case 'h':
         if ((flags & OPT_FMT_HTTP) == 0)
@@ -368,8 +361,6 @@ static const char *format2str(int format)
         return "SMIME";
     case FORMAT_MSBLOB:
         return "MSBLOB";
-    case FORMAT_ENGINE:
-        return "ENGINE";
     case FORMAT_HTTP:
         return "HTTP";
     case FORMAT_PKCS12:
@@ -395,9 +386,7 @@ int opt_cipher_silent(const char *name, EVP_CIPHER **cipherp)
 
     ERR_set_mark();
     if ((c = EVP_CIPHER_fetch(app_get0_libctx(), name,
-                              app_get0_propq())) != NULL
-        || (opt_legacy_okay()
-            && (c = (EVP_CIPHER *)EVP_get_cipherbyname(name)) != NULL)) {
+                              app_get0_propq())) != NULL) {
         ERR_pop_to_mark();
         if (cipherp != NULL) {
             EVP_CIPHER_free(*cipherp);
@@ -456,9 +445,7 @@ int opt_md_silent(const char *name, EVP_MD **mdp)
     EVP_MD *md;
 
     ERR_set_mark();
-    if ((md = EVP_MD_fetch(app_get0_libctx(), name, app_get0_propq())) != NULL
-        || (opt_legacy_okay()
-            && (md = (EVP_MD *)EVP_get_digestbyname(name)) != NULL)) {
+    if ((md = EVP_MD_fetch(app_get0_libctx(), name, app_get0_propq())) != NULL) {
         ERR_pop_to_mark();
         if (mdp != NULL) {
             EVP_MD_free(*mdp);
@@ -990,14 +977,12 @@ int opt_next(void)
                 return -1;
             break;
         case 'c':
-        case 'E':
         case 'F':
         case 'f':
         case 'A':
         case 'a':
             if (opt_format(arg,
                            o->valtype == 'c' ? OPT_FMT_PDS :
-                           o->valtype == 'E' ? OPT_FMT_PDE :
                            o->valtype == 'F' ? OPT_FMT_PEMDER :
                            o->valtype == 'A' ? OPT_FMT_ASN1 :
                            OPT_FMT_ANY, &ival))
@@ -1114,8 +1099,6 @@ static const char *valtype2param(const OPTIONS *o)
         return "long";
     case 'u':
         return "ulong";
-    case 'E':
-        return "PEM|DER|ENGINE";
     case 'F':
         return "PEM|DER";
     case 'f':

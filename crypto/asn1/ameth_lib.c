@@ -8,7 +8,7 @@
  */
 
 /*
- * We need to use some engine deprecated APIs
+ * We need to use some EVP_PKEY_asn1 deprecated APIs
  */
 #include "internal/deprecated.h"
 
@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <openssl/asn1t.h>
 #include <openssl/x509.h>
-#include <openssl/engine.h>
 #include "crypto/asn1.h"
 #include "crypto/evp.h"
 
@@ -75,11 +74,10 @@ static const EVP_PKEY_ASN1_METHOD *pkey_asn1_find(int type)
 }
 
 /*
- * Find an implementation of an ASN1 algorithm. If 'pe' is not NULL also
- * search through engines and set *pe to a functional reference to the engine
- * implementing 'type' or NULL if no engine implements it.
+ * Return ASN1 method for desired `type`, returns NULL if no method is found for
+ * `type`. If pe is not NULL, the function will set *pe to NULL to indicate no
+ * engine is used.
  */
-
 const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find(ENGINE **pe, int type)
 {
     const EVP_PKEY_ASN1_METHOD *t;
@@ -91,15 +89,6 @@ const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find(ENGINE **pe, int type)
         type = t->pkey_base_id;
     }
     if (pe) {
-#ifndef OPENSSL_NO_ENGINE
-        ENGINE *e;
-        /* type will contain the final unaliased type */
-        e = ENGINE_get_pkey_asn1_meth_engine(type);
-        if (e) {
-            *pe = e;
-            return ENGINE_get_pkey_asn1_meth(e, type);
-        }
-#endif
         *pe = NULL;
     }
     return t;
@@ -114,20 +103,6 @@ const EVP_PKEY_ASN1_METHOD *EVP_PKEY_asn1_find_str(ENGINE **pe,
     if (len == -1)
         len = (int)strlen(str);
     if (pe) {
-#ifndef OPENSSL_NO_ENGINE
-        ENGINE *e;
-        ameth = ENGINE_pkey_asn1_find_str(&e, str, len);
-        if (ameth) {
-            /*
-             * Convert structural into functional reference
-             */
-            if (!ENGINE_init(e))
-                ameth = NULL;
-            ENGINE_free(e);
-            *pe = e;
-            return ameth;
-        }
-#endif
         *pe = NULL;
     }
     for (i = EVP_PKEY_asn1_get_count(); i-- > 0; ) {

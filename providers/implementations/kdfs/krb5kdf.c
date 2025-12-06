@@ -44,7 +44,7 @@ static OSSL_FUNC_kdf_set_ctx_params_fn krb5kdf_set_ctx_params;
 static OSSL_FUNC_kdf_gettable_ctx_params_fn krb5kdf_gettable_ctx_params;
 static OSSL_FUNC_kdf_get_ctx_params_fn krb5kdf_get_ctx_params;
 
-static int KRB5KDF(const EVP_CIPHER *cipher, ENGINE *engine,
+static int KRB5KDF(const EVP_CIPHER *cipher,
                    const unsigned char *key, size_t key_len,
                    const unsigned char *constant, size_t constant_len,
                    unsigned char *okey, size_t okey_len);
@@ -128,7 +128,6 @@ static int krb5kdf_derive(void *vctx, unsigned char *key, size_t keylen,
 {
     KRB5KDF_CTX *ctx = (KRB5KDF_CTX *)vctx;
     const EVP_CIPHER *cipher;
-    ENGINE *engine;
 
     if (!ossl_prov_is_running() || !krb5kdf_set_ctx_params(ctx, params))
         return 0;
@@ -146,8 +145,8 @@ static int krb5kdf_derive(void *vctx, unsigned char *key, size_t keylen,
         ERR_raise(ERR_LIB_PROV, PROV_R_MISSING_CONSTANT);
         return 0;
     }
-    engine = ossl_prov_cipher_engine(&ctx->cipher);
-    return KRB5KDF(cipher, engine, ctx->key, ctx->key_len,
+
+    return KRB5KDF(cipher, ctx->key, ctx->key_len,
                    ctx->constant, ctx->constant_len,
                    key, keylen);
 }
@@ -163,7 +162,7 @@ static int krb5kdf_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 
     provctx = PROV_LIBCTX_OF(ctx->provctx);
 
-    if (!ossl_prov_cipher_load(&ctx->cipher, p.cipher, p.propq, p.engine, provctx))
+    if (!ossl_prov_cipher_load(&ctx->cipher, p.cipher, p.propq, provctx))
         return 0;
 
     if (p.key != NULL && !krb5kdf_set_membuf(&ctx->key, &ctx->key_len, p.key))
@@ -339,13 +338,12 @@ static void n_fold(unsigned char *block, unsigned int blocksize,
     }
 }
 
-static int cipher_init(EVP_CIPHER_CTX *ctx,
-                       const EVP_CIPHER *cipher, ENGINE *engine,
+static int cipher_init(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        const unsigned char *key, size_t key_len)
 {
     int klen, ret;
 
-    ret = EVP_EncryptInit_ex(ctx, cipher, engine, NULL, NULL);
+    ret = EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL);
     if (!ret)
         goto out;
     /* set the key len for the odd variable key len cipher */
@@ -371,7 +369,7 @@ out:
     return ret;
 }
 
-static int KRB5KDF(const EVP_CIPHER *cipher, ENGINE *engine,
+static int KRB5KDF(const EVP_CIPHER *cipher,
                    const unsigned char *key, size_t key_len,
                    const unsigned char *constant, size_t constant_len,
                    unsigned char *okey, size_t okey_len)
@@ -407,7 +405,7 @@ static int KRB5KDF(const EVP_CIPHER *cipher, ENGINE *engine,
     if (ctx == NULL)
         return 0;
 
-    ret = cipher_init(ctx, cipher, engine, key, key_len);
+    ret = cipher_init(ctx, cipher, key, key_len);
     if (!ret)
         goto out;
 
@@ -457,7 +455,7 @@ static int KRB5KDF(const EVP_CIPHER *cipher, ENGINE *engine,
             ret = EVP_CIPHER_CTX_reset(ctx);
             if (!ret)
                 goto out;
-            ret = cipher_init(ctx, cipher, engine, key, key_len);
+            ret = cipher_init(ctx, cipher, key, key_len);
             if (!ret)
                 goto out;
 

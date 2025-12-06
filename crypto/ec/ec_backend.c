@@ -18,7 +18,6 @@
 #include <openssl/params.h>
 #include <openssl/err.h>
 #ifndef FIPS_MODULE
-# include <openssl/engine.h>
 # include <openssl/x509.h>
 #endif
 #include "crypto/bn.h"
@@ -587,7 +586,7 @@ int ossl_ec_key_otherparams_fromdata(EC_KEY *ec, const OSSL_PARAM params[])
 int ossl_ec_key_is_foreign(const EC_KEY *ec)
 {
 #ifndef FIPS_MODULE
-    if (ec->engine != NULL || EC_KEY_get_method(ec) != EC_KEY_OpenSSL())
+    if (EC_KEY_get_method(ec) != EC_KEY_OpenSSL())
         return 1;
 #endif
     return 0;
@@ -603,8 +602,7 @@ EC_KEY *ossl_ec_key_dup(const EC_KEY *src, int selection)
         return NULL;
     }
 
-    if ((ret = ossl_ec_key_new_method_int(src->libctx, src->propq,
-                                          src->engine)) == NULL)
+    if ((ret = ossl_ec_key_new_method_int(src->libctx, src->propq)) == NULL)
         return NULL;
 
     /* copy the parameters */

@@ -13,12 +13,12 @@
 #include "internal/e_winsock.h"
 #include "ssl_local.h"
 
+#include <openssl/err.h>
 #include <openssl/objects.h>
 #include <openssl/x509v3.h>
 #include <openssl/rand.h>
 #include <openssl/ocsp.h>
 #include <openssl/dh.h>
-#include <openssl/engine.h>
 #include <openssl/async.h>
 #include <openssl/ct.h>
 #include <openssl/trace.h>
@@ -4148,8 +4148,10 @@ SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
      * If these aren't available from the provider we'll get NULL returns.
      * That's fine but will cause errors later if SSLv3 is negotiated
      */
-    ret->md5 = ssl_evp_md_fetch(libctx, NID_md5, propq);
-    ret->sha1 = ssl_evp_md_fetch(libctx, NID_sha1, propq);
+    ERR_set_mark();
+    ret->md5 = EVP_MD_fetch(libctx, "MD5", propq);
+    ret->sha1 = EVP_MD_fetch(libctx, "SHA1", propq);
+    ERR_pop_to_mark();
 
     if ((ret->ca_names = sk_X509_NAME_new_null()) == NULL) {
         ERR_raise(ERR_LIB_SSL, ERR_R_CRYPTO_LIB);
@@ -4196,24 +4198,6 @@ SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
         ERR_raise(ERR_LIB_SSL, ERR_R_SSL_LIB);
         goto err;
     }
-#endif
-#ifndef OPENSSL_NO_ENGINE
-# ifdef OPENSSL_SSL_CLIENT_ENGINE_AUTO
-#  define eng_strx(x)     #x
-#  define eng_str(x)      eng_strx(x)
-    /* Use specific client engine automatically... ignore errors */
-    {
-        ENGINE *eng;
-        eng = ENGINE_by_id(eng_str(OPENSSL_SSL_CLIENT_ENGINE_AUTO));
-        if (!eng) {
-            ERR_clear_error();
-            ENGINE_load_builtin_engines();
-            eng = ENGINE_by_id(eng_str(OPENSSL_SSL_CLIENT_ENGINE_AUTO));
-        }
-        if (!eng || !SSL_CTX_set_client_cert_engine(ret, eng))
-            ERR_clear_error();
-    }
-# endif
 #endif
 
 #ifndef OPENSSL_NO_COMP_ALG
@@ -4425,9 +4409,6 @@ void SSL_CTX_free(SSL_CTX *a)
 #endif
 #ifndef OPENSSL_NO_SRP
     ssl_ctx_srp_ctx_free_intern(a);
-#endif
-#ifndef OPENSSL_NO_ENGINE
-    tls_engine_finish(a->client_cert_engine);
 #endif
 
     OPENSSL_free(a->ext.ecpointformats);
@@ -7491,21 +7472,13 @@ void SSL_set_allow_early_data_cb(SSL *s,
 }
 
 const EVP_CIPHER *ssl_evp_cipher_fetch(OSSL_LIB_CTX *libctx,
-                                       int nid,
+                                       const char *name,
                                        const char *properties)
 {
     const EVP_CIPHER *ciph;
 
-    ciph = tls_get_cipher_from_engine(nid);
-    if (ciph != NULL)
-        return ciph;
-
-    /*
-     * If there is no engine cipher then we do an explicit fetch. This may fail
-     * and that could be ok
-     */
     ERR_set_mark();
-    ciph = EVP_CIPHER_fetch(libctx, OBJ_nid2sn(nid), properties);
+    ciph = EVP_CIPHER_fetch(libctx, name, properties);
     if (ciph != NULL) {
         OSSL_PARAM params[2];
         int decrypt_only = 0;
@@ -7550,23 +7523,6 @@ void ssl_evp_cipher_free(const EVP_CIPHER *cipher)
          */
         EVP_CIPHER_free((EVP_CIPHER *)cipher);
     }
-}
-
-const EVP_MD *ssl_evp_md_fetch(OSSL_LIB_CTX *libctx,
-                               int nid,
-                               const char *properties)
-{
-    const EVP_MD *md;
-
-    md = tls_get_digest_from_engine(nid);
-    if (md != NULL)
-        return md;
-
-    /* Otherwise we do an explicit fetch */
-    ERR_set_mark();
-    md = EVP_MD_fetch(libctx, OBJ_nid2sn(nid), properties);
-    ERR_pop_to_mark();
-    return md;
 }
 
 int ssl_evp_md_up_ref(const EVP_MD *md)
@@ -8104,6 +8060,18 @@ int SSL_get_peer_addr(SSL *ssl, BIO_ADDR *peer_addr)
 #else
     return 0;
 #endif
+}
+
+int SSL_listen_ex(SSL *listener, SSL *new_conn)
+{
+#ifndef OPENSSL_NO_QUIC
+    if (IS_QUIC(listener) && IS_QUIC(new_conn))
+        return ossl_quic_peeloff_conn(listener, new_conn);
+    else
+#endif
+    ERR_raise_data(ERR_LIB_SSL, ERR_R_PASSED_INVALID_ARGUMENT,
+                       "SSL_listen_ex only operates on QUIC SSL objects");
+    return 0;
 }
 
 int SSL_listen(SSL *ssl)

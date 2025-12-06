@@ -15,9 +15,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#ifndef FIPS_MODULE
-# include <openssl/engine.h>
-#endif
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
 #include <openssl/dh.h>
@@ -33,6 +30,7 @@
 #include "internal/ffc.h"
 #include "internal/numbers.h"
 #include "internal/provider.h"
+#include "internal/common.h"
 #include "evp_local.h"
 
 #ifndef FIPS_MODULE
@@ -155,8 +153,7 @@ int evp_pkey_ctx_state(const EVP_PKEY_CTX *ctx)
     return EVP_PKEY_STATE_LEGACY;
 }
 
-static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx,
-                                 EVP_PKEY *pkey, ENGINE *e,
+static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx, EVP_PKEY *pkey,
                                  const char *keytype, const char *propquery,
                                  int id)
 
@@ -185,52 +182,18 @@ static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx,
         }
     }
     /* If no ID was found here, we can only resort to find a keymgmt */
-    if (id == -1) {
-#ifndef FIPS_MODULE
-        /* Using engine with a key without id will not work */
-        if (e != NULL) {
-            ERR_raise(ERR_LIB_EVP, EVP_R_UNSUPPORTED_ALGORITHM);
-            return NULL;
-        }
-#endif
+    if (id == -1)
         goto common;
-    }
 
 #ifndef FIPS_MODULE
     /*
      * Here, we extract what information we can for the purpose of
      * supporting usage with implementations from providers, to make
      * for a smooth transition from legacy stuff to provider based stuff.
-     *
-     * If an engine is given, this is entirely legacy, and we should not
-     * pretend anything else, so we clear the name.
      */
-    if (e != NULL)
-        keytype = NULL;
-    if (e == NULL && (pkey == NULL || pkey->foreign == 0))
+    if (pkey == NULL || pkey->foreign == 0)
         keytype = OBJ_nid2sn(id);
 
-# ifndef OPENSSL_NO_ENGINE
-    if (e == NULL && pkey != NULL)
-        e = pkey->pmeth_engine != NULL ? pkey->pmeth_engine : pkey->engine;
-    /* Try to find an ENGINE which implements this method */
-    if (e != NULL) {
-        if (!ENGINE_init(e)) {
-            ERR_raise(ERR_LIB_EVP, ERR_R_ENGINE_LIB);
-            return NULL;
-        }
-    } else {
-        e = ENGINE_get_pkey_meth_engine(id);
-    }
-
-    /*
-     * If an ENGINE handled this method look it up. Otherwise use internal
-     * tables.
-     */
-    if (e != NULL)
-        pmeth = ENGINE_get_pkey_meth(e, id);
-    else
-# endif /* OPENSSL_NO_ENGINE */
     if (pkey != NULL && pkey->foreign)
         pmeth = EVP_PKEY_meth_find(id);
     else
@@ -240,10 +203,10 @@ static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx,
 #endif /* FIPS_MODULE */
  common:
     /*
-     * If there's no engine and no app supplied pmeth and there's a name, we try
+     * If there's no app supplied pmeth and there's a name, we try
      * fetching a provider implementation.
      */
-    if (e == NULL && app_pmeth == NULL && keytype != NULL) {
+    if (app_pmeth == NULL && keytype != NULL) {
         /*
          * If |pkey| is given and is provided, we take a reference to its
          * keymgmt.  Otherwise, we fetch one for the keytype we got. This
@@ -297,11 +260,6 @@ static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx,
         ret = OPENSSL_zalloc(sizeof(*ret));
     }
 
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    if ((ret == NULL || pmeth == NULL) && e != NULL)
-        ENGINE_finish(e);
-#endif
-
     if (ret == NULL) {
         EVP_KEYMGMT_free(keymgmt);
         return NULL;
@@ -318,7 +276,6 @@ static EVP_PKEY_CTX *int_ctx_new(OSSL_LIB_CTX *libctx,
     ret->keytype = keytype;
     ret->keymgmt = keymgmt;
     ret->legacy_keytype = id;
-    ret->engine = e;
     ret->pmeth = pmeth;
     ret->operation = EVP_PKEY_OP_UNDEFINED;
 
@@ -346,13 +303,13 @@ EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_name(OSSL_LIB_CTX *libctx,
                                          const char *name,
                                          const char *propquery)
 {
-    return int_ctx_new(libctx, NULL, NULL, name, propquery, -1);
+    return int_ctx_new(libctx, NULL, name, propquery, -1);
 }
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_pkey(OSSL_LIB_CTX *libctx, EVP_PKEY *pkey,
                                          const char *propquery)
 {
-    return int_ctx_new(libctx, pkey, NULL, NULL, propquery, -1);
+    return int_ctx_new(libctx, pkey, NULL, propquery, -1);
 }
 
 void evp_pkey_ctx_free_old_ops(EVP_PKEY_CTX *ctx)
@@ -404,9 +361,6 @@ void EVP_PKEY_CTX_free(EVP_PKEY_CTX *ctx)
     OPENSSL_free(ctx->propquery);
     EVP_PKEY_free(ctx->pkey);
     EVP_PKEY_free(ctx->peerkey);
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    ENGINE_finish(ctx->engine);
-#endif
     BN_free(ctx->rsa_pubexp);
     OPENSSL_free(ctx);
 }
@@ -442,25 +396,22 @@ void EVP_PKEY_meth_free(EVP_PKEY_METHOD *pmeth)
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *pkey, ENGINE *e)
 {
-    return int_ctx_new(NULL, pkey, e, NULL, NULL, -1);
+    if (!ossl_assert(e == NULL))
+        return NULL;
+    return int_ctx_new(NULL, pkey, NULL, NULL, -1);
 }
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_new_id(int id, ENGINE *e)
 {
-    return int_ctx_new(NULL, NULL, e, NULL, NULL, id);
+    if (!ossl_assert(e == NULL))
+        return NULL;
+    return int_ctx_new(NULL, NULL, NULL, NULL, id);
 }
 
 EVP_PKEY_CTX *EVP_PKEY_CTX_dup(const EVP_PKEY_CTX *pctx)
 {
     EVP_PKEY_CTX *rctx;
 
-# ifndef OPENSSL_NO_ENGINE
-    /* Make sure it's safe to copy a pkey context using an ENGINE */
-    if (pctx->engine && !ENGINE_init(pctx->engine)) {
-        ERR_raise(ERR_LIB_EVP, ERR_R_ENGINE_LIB);
-        return 0;
-    }
-# endif
     rctx = OPENSSL_zalloc(sizeof(*rctx));
     if (rctx == NULL)
         return NULL;
@@ -576,9 +527,6 @@ EVP_PKEY_CTX *EVP_PKEY_CTX_dup(const EVP_PKEY_CTX *pctx)
     }
 
     rctx->pmeth = pctx->pmeth;
-# ifndef OPENSSL_NO_ENGINE
-    rctx->engine = pctx->engine;
-# endif
 
     if (pctx->peerkey != NULL && !EVP_PKEY_up_ref(pctx->peerkey))
         goto err;

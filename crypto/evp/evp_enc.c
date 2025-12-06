@@ -7,23 +7,18 @@
  * https://www.openssl.org/source/license.html
  */
 
-/* We need to use some engine deprecated APIs */
-#define OPENSSL_SUPPRESS_DEPRECATED
-
 #include <stdio.h>
 #include <limits.h>
 #include <assert.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#ifndef FIPS_MODULE
-# include <openssl/engine.h>
-#endif
 #include <openssl/params.h>
 #include <openssl/core_names.h>
 #include "internal/cryptlib.h"
 #include "internal/provider.h"
 #include "internal/core.h"
+#include "internal/common.h"
 #include "internal/safe_math.h"
 #include "crypto/evp.h"
 #include "evp_local.h"
@@ -61,9 +56,6 @@ int EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx)
             OPENSSL_cleanse(ctx->cipher_data, ctx->cipher->ctx_size);
     }
     OPENSSL_free(ctx->cipher_data);
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    ENGINE_finish(ctx->engine);
-#endif
     memset(ctx, 0, sizeof(*ctx));
     ctx->iv_len = -1;
     return 1;
@@ -91,15 +83,12 @@ void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *ctx)
 
 static int evp_cipher_init_internal(EVP_CIPHER_CTX *ctx,
                                     const EVP_CIPHER *cipher,
-                                    ENGINE *impl, const unsigned char *key,
+                                    const unsigned char *key,
                                     const unsigned char *iv, int enc,
                                     uint8_t is_pipeline,
                                     const OSSL_PARAM params[])
 {
     int n;
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    ENGINE *tmpimpl = NULL;
-#endif
 
     /*
      * enc == 1 means we are encrypting.
@@ -123,32 +112,10 @@ static int evp_cipher_init_internal(EVP_CIPHER_CTX *ctx,
     if (is_pipeline)
         goto nonlegacy;
 
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    /*
-     * Whether it's nice or not, "Inits" can be used on "Final"'d contexts so
-     * this context may already have an ENGINE! Try to avoid releasing the
-     * previous handle, re-querying for an ENGINE, and having a
-     * reinitialisation, when it may all be unnecessary.
-     */
-    if (ctx->engine && ctx->cipher
-        && (cipher == NULL || cipher->nid == ctx->cipher->nid))
-        goto skip_to_init;
-
-    if (cipher != NULL && impl == NULL) {
-         /* Ask if an ENGINE is reserved for this job */
-        tmpimpl = ENGINE_get_cipher_engine(cipher->nid);
-    }
-#endif
-
     /*
      * If there are engines involved then we should use legacy handling for now.
      */
-    if (ctx->engine != NULL
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-            || tmpimpl != NULL
-#endif
-            || impl != NULL
-            || (cipher != NULL && cipher->origin == EVP_ORIG_METH)
+    if ((cipher != NULL && cipher->origin == EVP_ORIG_METH)
             || (cipher == NULL && ctx->cipher != NULL
                                && ctx->cipher->origin == EVP_ORIG_METH)) {
         if (ctx->cipher == ctx->fetched_cipher)
@@ -349,39 +316,6 @@ nonlegacy:
             ctx->encrypt = enc;
             ctx->flags = flags;
         }
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-        if (impl != NULL) {
-            if (!ENGINE_init(impl)) {
-                ERR_raise(ERR_LIB_EVP, EVP_R_INITIALIZATION_ERROR);
-                return 0;
-            }
-        } else {
-            impl = tmpimpl;
-        }
-        if (impl != NULL) {
-            /* There's an ENGINE for this job ... (apparently) */
-            const EVP_CIPHER *c = ENGINE_get_cipher(impl, cipher->nid);
-
-            if (c == NULL) {
-                /*
-                 * One positive side-effect of US's export control history,
-                 * is that we should at least be able to avoid using US
-                 * misspellings of "initialisation"?
-                 */
-                ERR_raise(ERR_LIB_EVP, EVP_R_INITIALIZATION_ERROR);
-                return 0;
-            }
-            /* We'll use the ENGINE's private cipher definition */
-            cipher = c;
-            /*
-             * Store the ENGINE functional reference so we know 'cipher' came
-             * from an ENGINE and we need to release it when done.
-             */
-            ctx->engine = impl;
-        } else {
-            ctx->engine = NULL;
-        }
-#endif
 
         ctx->cipher = cipher;
         if (ctx->cipher->ctx_size) {
@@ -404,9 +338,6 @@ nonlegacy:
             }
         }
     }
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
- skip_to_init:
-#endif
     if (ctx->cipher == NULL)
         return 0;
 
@@ -504,8 +435,7 @@ static int evp_cipher_init_skey_internal(EVP_CIPHER_CTX *ctx,
     /*
      * If there are engines involved then we throw an error
      */
-    if (ctx->engine != NULL
-            || (cipher != NULL && cipher->origin == EVP_ORIG_METH)
+    if ((cipher != NULL && cipher->origin == EVP_ORIG_METH)
             || (cipher == NULL && ctx->cipher != NULL
                 && ctx->cipher->origin == EVP_ORIG_METH)) {
         ERR_raise(ERR_LIB_EVP, EVP_R_INITIALIZATION_ERROR);
@@ -635,7 +565,7 @@ int EVP_CipherInit_ex2(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        const unsigned char *key, const unsigned char *iv,
                        int enc, const OSSL_PARAM params[])
 {
-    return evp_cipher_init_internal(ctx, cipher, NULL, key, iv, enc, 0, params);
+    return evp_cipher_init_internal(ctx, cipher, key, iv, enc, 0, params);
 }
 
 int EVP_CipherInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
@@ -643,14 +573,16 @@ int EVP_CipherInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
 {
     if (cipher != NULL)
         EVP_CIPHER_CTX_reset(ctx);
-    return evp_cipher_init_internal(ctx, cipher, NULL, key, iv, enc, 0, NULL);
+    return evp_cipher_init_internal(ctx, cipher, key, iv, enc, 0, NULL);
 }
 
 int EVP_CipherInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                       ENGINE *impl, const unsigned char *key,
                       const unsigned char *iv, int enc)
 {
-    return evp_cipher_init_internal(ctx, cipher, impl, key, iv, enc, 0, NULL);
+    if (!ossl_assert(impl == NULL))
+        return 0;
+    return evp_cipher_init_internal(ctx, cipher, key, iv, enc, 0, NULL);
 }
 
 int EVP_CipherPipelineEncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
@@ -665,7 +597,7 @@ int EVP_CipherPipelineEncryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
 
     ctx->numpipes = numpipes;
 
-    if (!evp_cipher_init_internal(ctx, cipher, NULL, NULL, NULL, 1, 1,
+    if (!evp_cipher_init_internal(ctx, cipher, NULL, NULL, 1, 1,
                                   NULL))
         return 0;
 
@@ -695,7 +627,7 @@ int EVP_CipherPipelineDecryptInit(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
 
     ctx->numpipes = numpipes;
 
-    if (!evp_cipher_init_internal(ctx, cipher, NULL, NULL, NULL, 0, 1,
+    if (!evp_cipher_init_internal(ctx, cipher, NULL, NULL, 0, 1,
                                   NULL))
         return 0;
 
@@ -816,7 +748,9 @@ int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        ENGINE *impl, const unsigned char *key,
                        const unsigned char *iv)
 {
-    return EVP_CipherInit_ex(ctx, cipher, impl, key, iv, 1);
+    if (!ossl_assert(impl == NULL))
+        return 0;
+    return EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 1);
 }
 
 int EVP_EncryptInit_ex2(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
@@ -836,7 +770,9 @@ int EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
                        ENGINE *impl, const unsigned char *key,
                        const unsigned char *iv)
 {
-    return EVP_CipherInit_ex(ctx, cipher, impl, key, iv, 0);
+    if (!ossl_assert(impl == NULL))
+        return 0;
+    return EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0);
 }
 
 int EVP_DecryptInit_ex2(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher,
@@ -1810,14 +1746,6 @@ int EVP_CIPHER_CTX_copy(EVP_CIPHER_CTX *out, const EVP_CIPHER_CTX *in)
 
     /* Code below to be removed when legacy support is dropped. */
  legacy:
-
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    /* Make sure it's safe to copy a cipher context using an ENGINE */
-    if (in->engine && !ENGINE_init(in->engine)) {
-        ERR_raise(ERR_LIB_EVP, ERR_R_ENGINE_LIB);
-        return 0;
-    }
-#endif
 
     EVP_CIPHER_CTX_reset(out);
     memcpy(out, in, sizeof(*out));

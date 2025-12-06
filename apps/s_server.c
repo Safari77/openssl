@@ -601,7 +601,7 @@ static int bring_ocsp_resp_in_correct_order(SSL *s, tlsextstatusctx *srctx,
                                             STACK_OF(OCSP_RESPONSE) *sk_resp_unordered,
                                             STACK_OF(OCSP_RESPONSE) **sk_resp)
 {
-    STACK_OF(X509) *server_certs = NULL;
+    STACK_OF(X509) *server_chain = NULL;
     X509 *ssl_cert = NULL;
     X509 *issuer = NULL;
     OCSP_RESPONSE *resp = NULL;
@@ -613,14 +613,14 @@ static int bring_ocsp_resp_in_correct_order(SSL *s, tlsextstatusctx *srctx,
     if (*sk_resp != NULL)
         sk_OCSP_RESPONSE_pop_free(*sk_resp, OCSP_RESPONSE_free);
 
-    SSL_get0_chain_certs(s, &server_certs);
+    SSL_get0_chain_certs(s, &server_chain);
     /*
      * TODO(DTLS-1.3): in future DTLS should also be considered
      */
-    if (server_certs != NULL && srctx->status_all &&
+    if (server_chain != NULL && srctx->status_all &&
         !SSL_is_dtls(s) && SSL_version(s) >= TLS1_3_VERSION) {
         /* certificate chain is available */
-        num = sk_X509_num(server_certs) + 1;
+        num = sk_X509_num(server_chain) + 1;
     }
 
     /* get OCSP response for server certificate first */
@@ -640,10 +640,21 @@ static int bring_ocsp_resp_in_correct_order(SSL *s, tlsextstatusctx *srctx,
 
     for (i = 0; i < num; i++) {
         if (i != 0) /* for each certificate in chain (except root) get the OCSP response */
-            ssl_cert = sk_X509_value(server_certs, i - 1);
+            ssl_cert = sk_X509_value(server_chain, i - 1);
 
         /* issuer certificate is next in chain */
-        issuer = sk_X509_value(server_certs, i);
+        issuer = sk_X509_value(server_chain, i);
+
+        /*
+         * in the case the root CA certificate is not included in the chain
+         * we assume that the last remaining response is issued by it
+         */
+        if (issuer == NULL && i == (num - 1) && sk_OCSP_RESPONSE_num(sk_resp_unordered) == 1) {
+            resp = sk_OCSP_RESPONSE_value(sk_resp_unordered, 0);
+            (void)sk_OCSP_RESPONSE_push(*sk_resp, resp);
+            sk_OCSP_RESPONSE_delete(sk_resp_unordered, 0);
+            continue;
+        }
 
         if (issuer == NULL
             || (cert_id = OCSP_cert_to_id(NULL, ssl_cert, issuer)) == NULL) {
@@ -752,7 +763,7 @@ static int get_ocsp_resp_from_responder(SSL *s, tlsextstatusctx *srctx,
 {
     X509 *ssl_cert = NULL;
     int i, num = 0;
-    STACK_OF(X509) *server_certs = NULL;
+    STACK_OF(X509) *server_chain = NULL;
     OCSP_RESPONSE *resp = NULL;
 
     if (*sk_resp != NULL) {
@@ -760,14 +771,15 @@ static int get_ocsp_resp_from_responder(SSL *s, tlsextstatusctx *srctx,
         *sk_resp = NULL;
     }
 
-    SSL_get0_chain_certs(s, &server_certs);
+    SSL_get0_chain_certs(s, &server_chain);
+
     /*
      * TODO(DTLS-1.3): in future DTLS should also be considered
      */
-    if (server_certs != NULL && srctx->status_all &&
+    if (server_chain != NULL && srctx->status_all &&
         !SSL_is_dtls(s) && SSL_version(s) >= TLS1_3_VERSION) {
         /* certificate chain is available */
-        num = sk_X509_num(server_certs) + 1;
+        num = sk_X509_num(server_chain) + 1;
     } else {
         /*
          * certificate chain is not available,
@@ -792,7 +804,7 @@ static int get_ocsp_resp_from_responder(SSL *s, tlsextstatusctx *srctx,
     /* for each certificate in chain (except root) get the OCSP response */
     for (i = 0; i < num; i++) {
         if (i != 0) /* get OCSP response for server certificate first */
-            ssl_cert = sk_X509_value(server_certs, i - 1);
+            ssl_cert = sk_X509_value(server_chain, i - 1);
 
         resp = NULL;
         if (get_ocsp_resp_from_responder_single(s, ssl_cert, srctx, &resp) != SSL_TLSEXT_ERR_OK)
@@ -927,7 +939,6 @@ static int not_resumable_sess_cb(SSL *s, int is_forward_secure)
 
 typedef enum OPTION_choice {
     OPT_COMMON,
-    OPT_ENGINE,
     OPT_4, OPT_6, OPT_ACCEPT, OPT_PORT, OPT_UNIX, OPT_UNLINK, OPT_NACCEPT,
     OPT_VERIFY, OPT_NAMEOPT, OPT_UPPER_V_VERIFY, OPT_CONTEXT, OPT_CERT, OPT_CRL,
     OPT_CRL_DOWNLOAD, OPT_SERVERINFO, OPT_CERTFORM, OPT_KEY, OPT_KEYFORM,
@@ -975,9 +986,6 @@ const OPTIONS s_server_options[] = {
 #ifndef OPENSSL_NO_SSL_TRACE
     {"trace", OPT_TRACE, '-', "trace protocol messages"},
 #endif
-#ifndef OPENSSL_NO_ENGINE
-    {"engine", OPT_ENGINE, 's', "Use engine, possibly a hardware device"},
-#endif
 
     OPT_SECTION("Network"),
     {"port", OPT_PORT, 'p',
@@ -1024,7 +1032,7 @@ const OPTIONS s_server_options[] = {
      "Private key file to use; default is -cert file or else" TEST_CERT},
     {"key2", OPT_KEY2, '<',
      "-Private Key file to use for servername if not in -cert2"},
-    {"keyform", OPT_KEYFORM, 'f', "Key format (ENGINE, other values ignored)"},
+    {"keyform", OPT_KEYFORM, 'f', "Key format (DER/PEM)"},
     {"pass", OPT_PASS, 's', "Private key and cert file pass phrase source"},
     {"dcert", OPT_DCERT, '<',
      "Second server certificate file to use (usually for DSA)"},
@@ -1034,8 +1042,7 @@ const OPTIONS s_server_options[] = {
      "second server certificate chain file in PEM format"},
     {"dkey", OPT_DKEY, '<',
      "Second private key file to use (usually for DSA)"},
-    {"dkeyform", OPT_DKEYFORM, 'f',
-     "Second key file format (ENGINE, other values ignored)"},
+    {"dkeyform", OPT_DKEYFORM, 'f', "Second key file format (DER/PEM)"},
     {"dpass", OPT_DPASS, 's',
      "Second private key and cert file pass phrase source"},
     {"dhparam", OPT_DHPARAM, '<', "DH parameters file to use"},
@@ -1230,7 +1237,6 @@ const OPTIONS s_server_options[] = {
 
 int s_server_main(int argc, char *argv[])
 {
-    ENGINE *engine = NULL;
     EVP_PKEY *s_key = NULL, *s_dkey = NULL;
     SSL_CONF_CTX *cctx = NULL;
     const SSL_METHOD *meth = TLS_server_method();
@@ -1820,11 +1826,6 @@ int s_server_main(int argc, char *argv[])
         case OPT_ID_PREFIX:
             session_id_prefix = opt_arg();
             break;
-        case OPT_ENGINE:
-#ifndef OPENSSL_NO_ENGINE
-            engine = setup_engine(opt_arg(), s_debug);
-#endif
-            break;
         case OPT_R_CASES:
             if (!opt_rand(o))
                 goto end;
@@ -2036,7 +2037,7 @@ int s_server_main(int argc, char *argv[])
         goto end;
 
     if (nocert == 0) {
-        s_key = load_key(s_key_file, s_key_format, 0, pass, engine,
+        s_key = load_key(s_key_file, s_key_format, 0, pass,
                          "server certificate private key");
         if (s_key == NULL)
             goto end;
@@ -2053,7 +2054,7 @@ int s_server_main(int argc, char *argv[])
         }
 
         if (tlsextcbp.servername != NULL) {
-            s_key2 = load_key(s_key_file2, s_key_format, 0, pass, engine,
+            s_key2 = load_key(s_key_file2, s_key_format, 0, pass,
                               "second server certificate private key");
             if (s_key2 == NULL)
                 goto end;
@@ -2099,7 +2100,7 @@ int s_server_main(int argc, char *argv[])
             s_dkey_file = s_dcert_file;
 
         s_dkey = load_key(s_dkey_file, s_dkey_format,
-                          0, dpass, engine, "second certificate private key");
+                          0, dpass, "second certificate private key");
         if (s_dkey == NULL)
             goto end;
 
@@ -2600,7 +2601,6 @@ int s_server_main(int argc, char *argv[])
     ssl_excert_free(exc);
     sk_OPENSSL_STRING_free(ssl_args);
     SSL_CONF_CTX_free(cctx);
-    release_engine(engine);
     BIO_free(bio_s_out);
     bio_s_out = NULL;
     BIO_free(bio_s_msg);

@@ -18,7 +18,6 @@
 #include <ctype.h>
 #include <openssl/objects.h>
 #include <openssl/comp.h>
-#include <openssl/engine.h>
 #include <openssl/crypto.h>
 #include <openssl/conf.h>
 #include <openssl/trace.h>
@@ -125,11 +124,6 @@ static int ssl_cipher_info_find(const ssl_cipher_table *table,
 #define ssl_cipher_info_lookup(table, x) \
     ssl_cipher_info_find(table, OSSL_NELEM(table), x)
 
-/*
- * PKEY_TYPE for GOST89MAC is known in advance, but, because implementation
- * is engine-provided, we'll fill it only if corresponding EVP_PKEY_METHOD is
- * found
- */
 static const int default_mac_pkey_id[SSL_MD_NUM_IDX] = {
     /* MD5, SHA, GOST94, MAC89 */
     EVP_PKEY_HMAC, EVP_PKEY_HMAC, EVP_PKEY_HMAC, NID_undef,
@@ -285,8 +279,6 @@ static const SSL_CIPHER cipher_aliases[] = {
  * Search for public key algorithm with given name and return its pkey_id if
  * it is available. Otherwise return 0
  */
-# ifdef OPENSSL_NO_ENGINE
-
 static int get_optional_pkey_id(const char *pkey_name)
 {
     const EVP_PKEY_ASN1_METHOD *ameth;
@@ -298,23 +290,6 @@ static int get_optional_pkey_id(const char *pkey_name)
     return 0;
 }
 
-# else
-
-static int get_optional_pkey_id(const char *pkey_name)
-{
-    const EVP_PKEY_ASN1_METHOD *ameth;
-    ENGINE *tmpeng = NULL;
-    int pkey_id = 0;
-    ameth = EVP_PKEY_asn1_find_str(&tmpeng, pkey_name, -1);
-    if (ameth) {
-        if (EVP_PKEY_asn1_get0_info(&pkey_id, NULL, NULL, NULL, NULL,
-                                    ameth) <= 0)
-            pkey_id = 0;
-    }
-    tls_engine_finish(tmpeng);
-    return pkey_id;
-}
-# endif
 #else
 static int get_optional_pkey_id(const char *pkey_name)
 {
@@ -333,8 +308,9 @@ int ssl_load_ciphers(SSL_CTX *ctx)
     ctx->disabled_enc_mask = 0;
     for (i = 0, t = ssl_cipher_table_cipher; i < SSL_ENC_NUM_IDX; i++, t++) {
         if (t->nid != NID_undef) {
-            const EVP_CIPHER *cipher
-                = ssl_evp_cipher_fetch(ctx->libctx, t->nid, ctx->propq);
+            const EVP_CIPHER *cipher = ssl_evp_cipher_fetch(ctx->libctx,
+                                                            OBJ_nid2sn(t->nid),
+                                                            ctx->propq);
 
             ctx->ssl_cipher_methods[i] = cipher;
             if (cipher == NULL)
@@ -343,8 +319,15 @@ int ssl_load_ciphers(SSL_CTX *ctx)
     }
     ctx->disabled_mac_mask = 0;
     for (i = 0, t = ssl_cipher_table_mac; i < SSL_MD_NUM_IDX; i++, t++) {
-        const EVP_MD *md
-            = ssl_evp_md_fetch(ctx->libctx, t->nid, ctx->propq);
+        /*
+         * We ignore any errors from the fetch below. It is expected to fail
+         * if these algorithms are not available.
+         */
+        ERR_set_mark();
+        const EVP_MD *md = EVP_MD_fetch(ctx->libctx,
+                                        OBJ_nid2sn(t->nid),
+                                        ctx->propq);
+        ERR_pop_to_mark();
 
         ctx->ssl_digest_methods[i] = md;
         if (md == NULL) {
@@ -461,9 +444,8 @@ int ssl_cipher_get_evp_cipher(SSL_CTX *ctx, const SSL_CIPHER *sslc,
     } else {
         if (i == SSL_ENC_NULL_IDX) {
             /*
-             * We assume we don't care about this coming from an ENGINE so
-             * just do a normal EVP_CIPHER_fetch instead of
-             * ssl_evp_cipher_fetch()
+             * This does not need any special handling. Use EVP_CIPHER_fetch()
+             * directly.
              */
             *enc = EVP_CIPHER_fetch(ctx->libctx, "NULL", ctx->propq);
             if (*enc == NULL)
@@ -561,27 +543,28 @@ int ssl_cipher_get_evp(SSL_CTX *ctx, const SSL_SESSION *s,
 
         if (c->algorithm_enc == SSL_RC4
                 && c->algorithm_mac == SSL_MD5)
-            evp = ssl_evp_cipher_fetch(ctx->libctx, NID_rc4_hmac_md5,
+            evp = ssl_evp_cipher_fetch(ctx->libctx,
+                                       "RC4-HMAC-MD5",
                                        ctx->propq);
         else if (c->algorithm_enc == SSL_AES128
                     && c->algorithm_mac == SSL_SHA1)
             evp = ssl_evp_cipher_fetch(ctx->libctx,
-                                       NID_aes_128_cbc_hmac_sha1,
+                                       "AES-128-CBC-HMAC-SHA1",
                                        ctx->propq);
         else if (c->algorithm_enc == SSL_AES256
                     && c->algorithm_mac == SSL_SHA1)
              evp = ssl_evp_cipher_fetch(ctx->libctx,
-                                        NID_aes_256_cbc_hmac_sha1,
+                                        "AES-256-CBC-HMAC-SHA1",
                                         ctx->propq);
         else if (c->algorithm_enc == SSL_AES128
                     && c->algorithm_mac == SSL_SHA256)
             evp = ssl_evp_cipher_fetch(ctx->libctx,
-                                       NID_aes_128_cbc_hmac_sha256,
+                                       "AES-128-CBC-HMAC-SHA256",
                                        ctx->propq);
         else if (c->algorithm_enc == SSL_AES256
                     && c->algorithm_mac == SSL_SHA256)
             evp = ssl_evp_cipher_fetch(ctx->libctx,
-                                       NID_aes_256_cbc_hmac_sha256,
+                                       "AES-256-CBC-HMAC-SHA256",
                                        ctx->propq);
 
         if (evp != NULL) {

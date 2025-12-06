@@ -13,7 +13,6 @@
 #include <openssl/core_names.h>
 #include <openssl/macros.h>
 #ifndef OPENSSL_NO_DEPRECATED_3_6
-# include <openssl/engine.h>
 # include "crypto/asn1.h"
 #include <openssl/types.h>
 #else
@@ -65,16 +64,12 @@ int EVP_PKEY_type(int type)
 #ifndef OPENSSL_NO_DEPRECATED_3_6
     int ret;
     const EVP_PKEY_ASN1_METHOD *ameth;
-    ENGINE *e;
 
-    ameth = EVP_PKEY_asn1_find(&e, type);
+    ameth = EVP_PKEY_asn1_find(NULL, type);
     if (ameth)
         ret = ameth->pkey_id;
     else
         ret = NID_undef;
-# ifndef OPENSSL_NO_ENGINE
-    ENGINE_finish(e);
-# endif
     return ret;
 #else
     size_t i;

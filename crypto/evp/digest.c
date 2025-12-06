@@ -7,22 +7,17 @@
  * https://www.openssl.org/source/license.html
  */
 
-/* We need to use some engine deprecated APIs */
-#define OPENSSL_SUPPRESS_DEPRECATED
-
 #include <stdio.h>
 #include <openssl/objects.h>
 #include <openssl/evp.h>
 #include <openssl/ec.h>
-#ifndef FIPS_MODULE
-# include <openssl/engine.h>
-#endif
 #include <openssl/params.h>
 #include <openssl/core_names.h>
 #include "internal/cryptlib.h"
 #include "internal/nelem.h"
 #include "internal/provider.h"
 #include "internal/core.h"
+#include "internal/common.h"
 #include "crypto/evp.h"
 #include "evp_local.h"
 
@@ -59,11 +54,6 @@ void evp_md_ctx_clear_digest(EVP_MD_CTX *ctx, int force, int keep_fetched)
     cleanup_old_md_data(ctx, force);
     if (force)
         ctx->digest = NULL;
-
-#if !defined(FIPS_MODULE) && !defined(OPENSSL_NO_ENGINE)
-    ENGINE_finish(ctx->engine);
-    ctx->engine = NULL;
-#endif
 
     /* Non legacy code, this has to be later than the ctx->digest cleaning */
     if (!keep_fetched) {
@@ -155,12 +145,8 @@ int evp_md_ctx_free_algctx(EVP_MD_CTX *ctx)
 }
 
 static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
-                                const OSSL_PARAM params[], ENGINE *impl)
+                                const OSSL_PARAM params[])
 {
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    ENGINE *tmpimpl = NULL;
-#endif
-
 #if !defined(FIPS_MODULE)
     if (ctx->pctx != NULL
             && EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx->pctx)
@@ -172,9 +158,9 @@ static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
          * operation. So in that case we redirect to EVP_DigestSignInit()
          */
         if (ctx->pctx->operation == EVP_PKEY_OP_SIGNCTX)
-            return EVP_DigestSignInit(ctx, NULL, type, impl, NULL);
+            return EVP_DigestSignInit(ctx, NULL, type, NULL, NULL);
         if (ctx->pctx->operation == EVP_PKEY_OP_VERIFYCTX)
-            return EVP_DigestVerifyInit(ctx, NULL, type, impl, NULL);
+            return EVP_DigestVerifyInit(ctx, NULL, type, NULL, NULL);
         ERR_raise(ERR_LIB_EVP, EVP_R_UPDATE_ERROR);
         return 0;
     }
@@ -193,43 +179,11 @@ static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
         type = ctx->digest;
     }
 
-    /* Code below to be removed when legacy support is dropped. */
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
     /*
-     * Whether it's nice or not, "Inits" can be used on "Final"'d contexts so
-     * this context may already have an ENGINE! Try to avoid releasing the
-     * previous handle, re-querying for an ENGINE, and having a
-     * reinitialisation, when it may all be unnecessary.
-     */
-    if (ossl_unlikely(ctx->engine != NULL)
-            && ctx->digest != NULL
-            && type->type == ctx->digest->type)
-        goto skip_to_init;
-
-    /*
-     * Ensure an ENGINE left lying around from last time is cleared (the
-     * previous check attempted to avoid this if the same ENGINE and
-     * EVP_MD could be used).
-     */
-    ENGINE_finish(ctx->engine);
-    ctx->engine = NULL;
-
-    if (impl == NULL)
-        tmpimpl = ENGINE_get_digest_engine(type->type);
-#endif
-
-    /*
-     * If there are engines involved or EVP_MD_CTX_FLAG_NO_INIT is set then we
+     * If there is EVP_MD_CTX_FLAG_NO_INIT set then we
      * should use legacy handling for now.
      */
-    if (impl != NULL
-#if !defined(OPENSSL_NO_ENGINE)
-            || ctx->engine != NULL
-# if !defined(FIPS_MODULE)
-            || tmpimpl != NULL
-# endif
-#endif
-            || (ctx->flags & EVP_MD_CTX_FLAG_NO_INIT) != 0
+    if ((ctx->flags & EVP_MD_CTX_FLAG_NO_INIT) != 0
             || (type != NULL && type->origin == EVP_ORIG_METH)
             || (type == NULL && ctx->digest != NULL
                              && ctx->digest->origin == EVP_ORIG_METH)) {
@@ -304,37 +258,6 @@ static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
     /* Code below to be removed when legacy support is dropped. */
  legacy:
 
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    if (type) {
-        if (impl != NULL) {
-            if (!ENGINE_init(impl)) {
-                ERR_raise(ERR_LIB_EVP, EVP_R_INITIALIZATION_ERROR);
-                return 0;
-            }
-        } else {
-            /* Ask if an ENGINE is reserved for this job */
-            impl = tmpimpl;
-        }
-        if (impl != NULL) {
-            /* There's an ENGINE for this job ... (apparently) */
-            const EVP_MD *d = ENGINE_get_digest(impl, type->type);
-
-            if (d == NULL) {
-                ERR_raise(ERR_LIB_EVP, EVP_R_INITIALIZATION_ERROR);
-                ENGINE_finish(impl);
-                return 0;
-            }
-            /* We'll use the ENGINE's private digest definition */
-            type = d;
-            /*
-             * Store the ENGINE functional reference so we know 'type' came
-             * from an ENGINE and we need to release it when done.
-             */
-            ctx->engine = impl;
-        } else
-            ctx->engine = NULL;
-    }
-#endif
     if (ctx->digest != type) {
         cleanup_old_md_data(ctx, 1);
 
@@ -346,9 +269,6 @@ static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
                 return 0;
         }
     }
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
- skip_to_init:
-#endif
 #ifndef FIPS_MODULE
     if (ctx->pctx != NULL
             && (!EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx->pctx)
@@ -368,18 +288,20 @@ static int evp_md_init_internal(EVP_MD_CTX *ctx, const EVP_MD *type,
 int EVP_DigestInit_ex2(EVP_MD_CTX *ctx, const EVP_MD *type,
                        const OSSL_PARAM params[])
 {
-    return evp_md_init_internal(ctx, type, params, NULL);
+    return evp_md_init_internal(ctx, type, params);
 }
 
 int EVP_DigestInit(EVP_MD_CTX *ctx, const EVP_MD *type)
 {
     EVP_MD_CTX_reset(ctx);
-    return evp_md_init_internal(ctx, type, NULL, NULL);
+    return evp_md_init_internal(ctx, type, NULL);
 }
 
 int EVP_DigestInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl)
 {
-    return evp_md_init_internal(ctx, type, NULL, impl);
+    if (!ossl_assert(impl == NULL))
+        return 0;
+    return evp_md_init_internal(ctx, type, NULL);
 }
 
 int EVP_DigestUpdate(EVP_MD_CTX *ctx, const void *data, size_t count)
@@ -668,13 +590,6 @@ int EVP_MD_CTX_copy_ex(EVP_MD_CTX *out, const EVP_MD_CTX *in)
 
     /* Code below to be removed when legacy support is dropped. */
  legacy:
-#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
-    /* Make sure it's safe to copy a digest context using an ENGINE */
-    if (in->engine && !ENGINE_init(in->engine)) {
-        ERR_raise(ERR_LIB_EVP, ERR_R_ENGINE_LIB);
-        return 0;
-    }
-#endif
 
     if (out->digest == in->digest) {
         tmp_buf = out->md_data;
@@ -727,13 +642,17 @@ int EVP_Digest(const void *data, size_t count,
                unsigned char *md, unsigned int *size, const EVP_MD *type,
                ENGINE *impl)
 {
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    EVP_MD_CTX *ctx;
     int ret;
 
+    if (!ossl_assert(impl == NULL))
+        return 0;
+
+    ctx = EVP_MD_CTX_new();
     if (ctx == NULL)
         return 0;
     EVP_MD_CTX_set_flags(ctx, EVP_MD_CTX_FLAG_ONESHOT);
-    ret = EVP_DigestInit_ex(ctx, type, impl)
+    ret = EVP_DigestInit_ex(ctx, type, NULL)
         && EVP_DigestUpdate(ctx, data, count)
         && EVP_DigestFinal_ex(ctx, md, size);
     EVP_MD_CTX_free(ctx);

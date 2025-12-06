@@ -83,20 +83,49 @@ static int crl_set_issuers(X509_CRL *crl)
 {
 
     int i, j;
-    GENERAL_NAMES *gens, *gtmp;
+    GENERAL_NAMES *most_recent_issuer, *gtmp;
     STACK_OF(X509_REVOKED) *revoked;
+
+    /*
+     * The CRL's nextUpdate field is optional, but we will still verify
+     * lastUpdate and treat missing or invalid values as a failure.
+     */
+    if (crl->crl.lastUpdate == NULL) {
+        crl->flags |= EXFLAG_INVALID;
+        return 0;
+    }
 
     revoked = X509_CRL_get_REVOKED(crl);
 
-    gens = NULL;
+    /*
+     * If this extension is not present on the first entry in an indirect CRL,
+     * the certificate issuer defaults to the CRL issuer. Subsequent entries in
+     * an indirect CRL, if this extension is not present, the certificate issuer
+     * for the entry is the same as that for the preceding entry.
+     * https://datatracker.ietf.org/doc/html/rfc5280#section-5.3.3
+     */
+    most_recent_issuer = NULL;
+
     for (i = 0; i < sk_X509_REVOKED_num(revoked); i++) {
         X509_REVOKED *rev = sk_X509_REVOKED_value(revoked, i);
         STACK_OF(X509_EXTENSION) *exts;
         ASN1_ENUMERATED *reason;
         X509_EXTENSION *ext;
+        const ASN1_TIME *rev_date;
+        ASN1_GENERALIZEDTIME *inv_date;
+        int nid;
 
-        gtmp = X509_REVOKED_get_ext_d2i(rev,
-                                        NID_certificate_issuer, &j, NULL);
+        /*
+         * The revocation date is a mandatory attribute. If we get NULL here, it
+         * means the validation has failed and an error has been pushed onto the
+         * error stack.
+         */
+        if ((rev_date = X509_REVOKED_get0_revocationDate(rev)) == NULL) {
+            crl->flags |= EXFLAG_INVALID;
+            return 0;
+        }
+
+        gtmp = X509_REVOKED_get_ext_d2i(rev, NID_certificate_issuer, &j, NULL);
         if (gtmp == NULL && j != -1) {
             crl->flags |= EXFLAG_INVALID;
             return 1;
@@ -107,7 +136,7 @@ static int crl_set_issuers(X509_CRL *crl)
              * Validation to ensure Certificate Issuer extensions in CRL
              * entries only appear when the Indirect CRL flag is TRUE in the
              * Issuing Distribution Point (IDP) extension, as required by
-             * RFC 5280 section 5.3.3.
+             * https://datatracker.ietf.org/doc/html/rfc5280#section-5.3.3
              */
             if (crl->idp == NULL || !crl->idp->indirectCRL) {
                 crl->flags |= EXFLAG_INVALID;
@@ -126,9 +155,9 @@ static int crl_set_issuers(X509_CRL *crl)
                 GENERAL_NAMES_free(gtmp);
                 return 0;
             }
-            gens = gtmp;
+            most_recent_issuer = gtmp;
         }
-        rev->issuer = gens;
+        rev->issuer = most_recent_issuer;
 
         reason = X509_REVOKED_get_ext_d2i(rev, NID_crl_reason, &j, NULL);
         if (reason == NULL && j != -1) {
@@ -142,18 +171,30 @@ static int crl_set_issuers(X509_CRL *crl)
         } else
             rev->reason = CRL_REASON_NONE;
 
-        /* Check for critical CRL entry extensions */
+        /* Check for critical CRL entry extensions and validate time. */
 
         exts = rev->extensions;
 
         for (j = 0; j < sk_X509_EXTENSION_num(exts); j++) {
             ext = sk_X509_EXTENSION_value(exts, j);
+            nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
+
+            /*
+             * If we obtain the extension but the time is NULL, it means that
+             * the validation has failed and the reason will be pushed onto the
+             * error stack.
+             */
+            if (nid == NID_invalidity_date) {
+                if ((inv_date = X509V3_EXT_d2i(ext)) == NULL) {
+                    crl->flags |= EXFLAG_INVALID;
+                    return 0;
+                }
+                ASN1_GENERALIZEDTIME_free(inv_date);
+            }
             if (X509_EXTENSION_get_critical(ext)) {
-                if (OBJ_obj2nid(X509_EXTENSION_get_object(ext))
-                    == NID_certificate_issuer)
+                if (nid == NID_certificate_issuer)
                     continue;
                 crl->flags |= EXFLAG_CRITICAL;
-                break;
             }
         }
 

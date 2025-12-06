@@ -15,12 +15,6 @@
 # define _POSIX_C_SOURCE 2
 #endif
 
-#ifndef OPENSSL_NO_ENGINE
-/* We need to use some deprecated APIs */
-# define OPENSSL_SUPPRESS_DEPRECATED
-# include <openssl/engine.h>
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -558,41 +552,33 @@ void clear_free(char *str)
 }
 
 EVP_PKEY *load_key(const char *uri, int format, int may_stdin,
-                   const char *pass, ENGINE *e, const char *desc)
+                   const char *pass, const char *desc)
 {
     EVP_PKEY *pkey = NULL;
-    char *allocated_uri = NULL;
 
     if (desc == NULL)
         desc = "private key";
 
-    if (format == FORMAT_ENGINE)
-        uri = allocated_uri = make_engine_uri(e, uri, desc);
     (void)load_key_certs_crls(uri, format, may_stdin, pass, desc, 0,
                               &pkey, NULL, NULL, NULL, NULL, NULL, NULL);
 
-    OPENSSL_free(allocated_uri);
     return pkey;
 }
 
 /* first try reading public key, on failure resort to loading private key */
 EVP_PKEY *load_pubkey(const char *uri, int format, int maybe_stdin,
-                      const char *pass, ENGINE *e, const char *desc)
+                      const char *pass, const char *desc)
 {
     EVP_PKEY *pkey = NULL;
-    char *allocated_uri = NULL;
 
     if (desc == NULL)
         desc = "public key";
 
-    if (format == FORMAT_ENGINE)
-        uri = allocated_uri = make_engine_uri(e, uri, desc);
     (void)load_key_certs_crls(uri, format, maybe_stdin, pass, desc, 1,
                               NULL, &pkey, NULL, NULL, NULL, NULL, NULL);
     if (pkey == NULL)
         (void)load_key_certs_crls(uri, format, maybe_stdin, pass, desc, 0,
                                   &pkey, NULL, NULL, NULL, NULL, NULL, NULL);
-    OPENSSL_free(allocated_uri);
     return pkey;
 }
 
@@ -732,11 +718,6 @@ int load_cert_certs(const char *uri,
             warn_cert(uri, *pcert, 0, vpm);
         if (pcerts != NULL)
             warn_certs(uri, *pcerts, 1, vpm);
-    } else {
-        if (pcerts != NULL) {
-            OSSL_STACK_OF_X509_free(*pcerts);
-            *pcerts = NULL;
-        }
     }
     return ret;
 }
@@ -827,18 +808,10 @@ X509_STORE *load_certstore(char *input, const char *pass, const char *desc,
 int load_certs(const char *uri, int maybe_stdin, STACK_OF(X509) **certs,
                const char *pass, const char *desc)
 {
-    int ret, was_NULL = *certs == NULL;
-
     if (desc == NULL)
         desc = "certificates";
-    ret = load_key_certs_crls(uri, FORMAT_UNDEF, maybe_stdin, pass, desc, 0,
-                              NULL, NULL, NULL, NULL, certs, NULL, NULL);
-
-    if (!ret && was_NULL) {
-        OSSL_STACK_OF_X509_free(*certs);
-        *certs = NULL;
-    }
-    return ret;
+    return load_key_certs_crls(uri, FORMAT_UNDEF, maybe_stdin, pass, desc, 0,
+                               NULL, NULL, NULL, NULL, certs, NULL, NULL);
 }
 
 /*
@@ -848,18 +821,10 @@ int load_certs(const char *uri, int maybe_stdin, STACK_OF(X509) **certs,
 int load_crls(const char *uri, STACK_OF(X509_CRL) **crls,
               const char *pass, const char *desc)
 {
-    int ret, was_NULL = *crls == NULL;
-
     if (desc == NULL)
         desc = "CRLs";
-    ret = load_key_certs_crls(uri, FORMAT_UNDEF, 0, pass, desc, 0,
-                              NULL, NULL, NULL, NULL, NULL, NULL, crls);
-
-    if (!ret && was_NULL) {
-        sk_X509_CRL_pop_free(*crls, X509_CRL_free);
-        *crls = NULL;
-    }
-    return ret;
+    return load_key_certs_crls(uri, FORMAT_UNDEF, 0, pass, desc, 0,
+                               NULL, NULL, NULL, NULL, NULL, NULL, crls);
 }
 
 static const char *format2string(int format)
@@ -901,10 +866,9 @@ static const char *format2string(int format)
  * If pcerts is non-NULL then all available certificates are appended to *pcerts
  * except any certificate assigned to *pcert.
  * If pcrls is non-NULL and *pcrls == NULL then a new list of CRLs is allocated.
- * If pcrls is non-NULL then all available CRLs are appended to *pcerts
+ * If pcrls is non-NULL then all available CRLs are appended to *pcrls
  * except any CRL assigned to *pcrl.
- * In any case (also on error) the caller is responsible for freeing all members
- * of *pcerts and *pcrls (as far as they are not NULL).
+ * On error, any contents of non-NULL credential pointers are freed.
  */
 int load_key_certs_crls(const char *uri, int format, int maybe_stdin,
                         const char *pass, const char *desc, int quiet,
@@ -1134,13 +1098,43 @@ int load_key_certs_crls(const char *uri, int format, int maybe_stdin,
         }
         BIO_printf(bio_err, "\n");
         ERR_print_errors(bio_err);
-    }
-    if (quiet || failed == NULL)
+        ERR_clear_last_mark();
+    } else {
         /* clear any suppressed or spurious errors */
         ERR_pop_to_mark();
-    else
-        ERR_clear_last_mark();
-    return failed == NULL;
+    }
+    if (failed != NULL) {
+        if (ppkey != NULL) {
+            EVP_PKEY_free(*ppkey);
+            *ppkey = NULL;
+        }
+        if (ppubkey != NULL) {
+            EVP_PKEY_free(*ppubkey);
+            *ppubkey = NULL;
+        }
+        if (pparams != NULL) {
+            EVP_PKEY_free(*pparams);
+            *pparams = NULL;
+        }
+        if (pcert != NULL) {
+            X509_free(*pcert);
+            *pcert = NULL;
+        }
+        if (pcerts != NULL) {
+            sk_X509_pop_free(*pcerts, X509_free);
+            *pcerts = NULL;
+        }
+        if (pcrl != NULL) {
+            X509_CRL_free(*pcrl);
+            *pcrl = NULL;
+        }
+        if (pcrls != NULL) {
+            sk_X509_CRL_pop_free(*pcrls, X509_CRL_free);
+            *pcrls = NULL;
+        }
+        return 0;
+    }
+    return 1;
 }
 
 #define X509V3_EXT_UNKNOWN_MASK  (0xfL << 16)
@@ -1368,7 +1362,7 @@ void print_bignum_var(BIO *out, const BIGNUM *in, const char *var,
 
         l = BN_bn2bin(in, buffer);
         for (i = 0; i < l; i++) {
-            BIO_printf(out, (i % 10) == 0 ? "\n        " : " ");
+            BIO_printf(out, (i % 16) == 0 ? "\n        " : " ");
             if (i < l - 1)
                 BIO_printf(out, "0x%02X,", buffer[i]);
             else
@@ -3499,25 +3493,6 @@ EVP_PKEY *app_paramgen(EVP_PKEY_CTX *ctx, const char *alg)
         BIO_printf(bio_err, "%s: Generating %s key parameters failed\n",
                    opt_getprog(), alg != NULL ? alg : "asymmetric");
     return res;
-}
-
-/*
- * Return non-zero if the legacy path is still an option.
- * This decision is based on the global command line operations and the
- * behaviour thus far.
- */
-int opt_legacy_okay(void)
-{
-    int provider_options = opt_provider_option_given();
-    int libctx = app_get0_libctx() != NULL || app_get0_propq() != NULL;
-
-    /*
-     * Having a provider option specified or a custom library context or
-     * property query, is a sure sign we're not using legacy.
-     */
-    if (provider_options || libctx)
-        return 0;
-    return 1;
 }
 
 #define MAX_KEY_SIZE 2048 /* Hope nobody needs mac key longer than 2048 bytes */
