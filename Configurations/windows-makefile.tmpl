@@ -208,7 +208,7 @@ OPENSSLDIR_dir={- canonpath($openssldir_dir) -}
 LIBDIR={- our $libdir = $config{libdir} || "lib";
           file_name_is_absolute($libdir) ? "" : $libdir -}
 MODULESDIR_dev={- use File::Spec::Functions qw(:DEFAULT splitpath catpath);
-                  our $modulesprefix = catdir($prefix,$libdir);
+                  our $modulesprefix = file_name_is_absolute($libdir) ? $libdir : catdir($prefix,$libdir);
                   our ($modulesprefix_dev, $modulesprefix_dir,
                        $modulesprefix_file) =
                       splitpath($modulesprefix, 1);
@@ -584,10 +584,10 @@ install_programs: install_runtime_libs build_inst_programs
 	@if not "$(INSTALL_PROGRAMS)"=="" \
 	 "$(PERL)" "$(SRCDIR)\util\copy.pl" $(INSTALL_PROGRAMS) \
                                         "$(INSTALLTOP)\bin"
-	@if not "$(INSTALL_PROGRAMS)"=="" \
+	@if not "$(INSTALL_PROGRAMPDBS)"=="" \
 	 "$(PERL)" "$(SRCDIR)\util\copy.pl" $(INSTALL_PROGRAMPDBS) \
                                         "$(INSTALLTOP)\bin"
-	@if not "$(INSTALL_PROGRAMS)"=="" \
+	@if not "$(BIN_SCRIPTS)"=="" \
 	 "$(PERL)" "$(SRCDIR)\util\copy.pl" $(BIN_SCRIPTS) \
                                         "$(INSTALLTOP)\bin"
 
