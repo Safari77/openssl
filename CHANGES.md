@@ -46,10 +46,19 @@ OpenSSL 4.0
 
    *Shane Lontis*
 
+ * Added `OPENSSL_sk_set_cmp_thunks()` api to allow for proper typecasting
+   during comparison of elements in a `STACK_OF` structure
+
+   *Neil Horman*
+
  * Added configure options to disable KDF algorithms for
    hmac-drbg-kdf, kbkdf, krb5kdf, pvkkdf, snmpkdf, sskdf, sshkdf, x942kdf and x963kdf.
 
    *Shane Lontis*
+
+ * OPENSSL_atexit() was removed.
+
+   *Bob Beck*
 
  * Support of deprecated elliptic curves in TLS according to RFC 8422 was
    disabled at compile-time by default. To enable it, use the
