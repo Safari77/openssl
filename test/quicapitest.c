@@ -40,10 +40,11 @@ static SSL_CTX *create_server_ctx(void);
 static int qc_init(SSL *qconn, BIO_ADDR *dst_addr);
 
 /* The ssltrace test assumes some options are switched on/off */
-#if !defined(OPENSSL_NO_SSL_TRACE)                            \
-    && defined(OPENSSL_NO_BROTLI) && defined(OPENSSL_NO_ZSTD) \
-    && !defined(OPENSSL_NO_ECX) && !defined(OPENSSL_NO_DH)    \
-    && !defined(OPENSSL_NO_ML_DSA) && !defined(OPENSSL_NO_ML_KEM)
+#if !defined(OPENSSL_NO_SSL_TRACE)                                \
+    && defined(OPENSSL_NO_BROTLI) && defined(OPENSSL_NO_ZSTD)     \
+    && !defined(OPENSSL_NO_ECX) && !defined(OPENSSL_NO_DH)        \
+    && !defined(OPENSSL_NO_ML_DSA) && !defined(OPENSSL_NO_ML_KEM) \
+    && !defined(OPENSSL_NO_SM2)
 #define DO_SSL_TRACE_TEST
 #endif
 
@@ -3489,7 +3490,7 @@ int setup_tests(void)
         goto err;
 
     cprivkey = test_mk_file_path(certsdir, "ee-key.pem");
-    if (privkey == NULL)
+    if (cprivkey == NULL)
         goto err;
 
     ADD_ALL_TESTS(test_quic_write_read, 3);
