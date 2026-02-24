@@ -252,6 +252,14 @@ OpenSSL 4.0
 
    *Ryan Hooper*
 
+ * Constify Various X509 functions:
+   X509_get_pathlen X509_check_ca X509_check_purpose X509_get_proxy_pathlen
+   X509_get_extension_flags X509_get_key_usage X509_get_extended_key_usage
+   X509_get0_subject_key_id X509_get0_authority_key_id X509_get0_authority_issuer
+   X509_get0_authority_serial.
+
+   * Bob Beck *
+
  * Fixed CRLs with invalid `ASN1_TIME` in invalidityDate extensions,
    where verification incorrectly succeeded. Enforced proper
    handling of `ASN1_TIME` validation results so that any CRL
@@ -319,6 +327,21 @@ OpenSSL 4.0
    See doc/design/ech-api.md for details.
 
    *Stephen Farrell* (with much support from *Matt Caswell* and *Tomáš Mráz*)
+
+ * X509_cmp_time, X509_cmp_current_time, and X509_cmp_timeframe have
+   had documentation added, and have then been deprecated.  A new
+   function, X509_check_certificate_times has been added, as well as
+   the <openssl/posix_time.h> interface from BoringSSL/LibreSSL. For
+   details of these functions and non-deprecated replacement
+   strategies, see X509_check_certificate_times(3).
+
+   * Bob Beck *
+
+ * Added BIO_set_send_flags() function that allows setting flags passed to
+   send(), sendto(), and sendmsg(). The main intention is to allow setting
+   the MSG_NOSIGNAL flag to avoid a crash on receiving the SIGPIPE signal.
+
+   *Igor Ustinov*
 
 OpenSSL 3.6
 -----------
@@ -495,6 +518,13 @@ OpenSSL 3.6
    stores between FIPS and non-FIPS implementations.
 
    *Dimitri John Ledkov*
+
+ * `SSL_add1_host()` and `SSL_set1_host()` were deprecated. The new replacement functions
+   `SSL_add1_dnsname()`, `SSL_set1_dnsname()`, `SSL_add1_ipaddr()`, and `SSL_set1_ipaddr()` were added.
+   API was added to support checking multiple names against a certificate with
+   `X509_VERIFY_PARAM`.  See `X509_VERIFY_PARAM_set_flags(3)` for full details.
+
+   *Bob Beck*
 
  * Added `X509_CRL_get0_tbs_sigalg()` accessor for the signature
    `AlgorithmIdentifier` inside CRL's `TBSCertList`.
