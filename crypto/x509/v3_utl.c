@@ -497,7 +497,7 @@ static STACK_OF(OPENSSL_STRING) *get_email(const X509_NAME *name,
     GENERAL_NAMES *gens)
 {
     STACK_OF(OPENSSL_STRING) *ret = NULL;
-    X509_NAME_ENTRY *ne;
+    const X509_NAME_ENTRY *ne;
     const ASN1_IA5STRING *email;
     GENERAL_NAME *gen;
     int i = -1;
@@ -866,7 +866,7 @@ static int do_check_string(const ASN1_STRING *a, int cmp_type, equal_fn equal,
     return rv;
 }
 
-static int do_x509_check(X509 *x, const char *chk, size_t chklen,
+static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
     unsigned int flags, int check_type, int othername_nid, char **peername)
 {
     GENERAL_NAMES *gens = NULL;
@@ -1001,7 +1001,7 @@ static int do_x509_check(X509 *x, const char *chk, size_t chklen,
     return 0;
 }
 
-int X509_check_host(X509 *x, const char *chk, size_t chklen,
+int X509_check_host(const X509 *x, const char *chk, size_t chklen,
     unsigned int flags, char **peername)
 {
     if (chk == NULL)
@@ -1034,7 +1034,7 @@ int ossl_x509_check_smtputf8(X509 *x, const char *chk, size_t chklen,
         == 1;
 }
 
-int X509_check_email(X509 *x, const char *chk, size_t chklen,
+int X509_check_email(const X509 *x, const char *chk, size_t chklen,
     unsigned int flags)
 {
     if (chk == NULL)
@@ -1060,7 +1060,7 @@ int X509_check_email(X509 *x, const char *chk, size_t chklen,
         NID_id_on_SmtpUTF8Mailbox, NULL);
 }
 
-int X509_check_ip(X509 *x, const unsigned char *chk, size_t chklen,
+int X509_check_ip(const X509 *x, const unsigned char *chk, size_t chklen,
     unsigned int flags)
 {
     if (chk == NULL)
@@ -1068,7 +1068,7 @@ int X509_check_ip(X509 *x, const unsigned char *chk, size_t chklen,
     return do_x509_check(x, (char *)chk, chklen, flags, GEN_IPADD, 0, NULL);
 }
 
-int X509_check_ip_asc(X509 *x, const char *ipasc, unsigned int flags)
+int X509_check_ip_asc(const X509 *x, const char *ipasc, unsigned int flags)
 {
     unsigned char ipout[16];
     size_t iplen;
@@ -1144,15 +1144,16 @@ ASN1_OCTET_STRING *a2i_IPADDRESS_NC(const char *ipasc)
     ASN1_OCTET_STRING *ret = NULL;
     unsigned char ipout[32];
     char *iptmp = NULL, *p;
+    const char *slash;
     int iplen1, iplen2;
 
-    p = strchr(ipasc, '/');
-    if (p == NULL)
+    slash = strchr(ipasc, '/');
+    if (slash == NULL)
         return NULL;
     iptmp = OPENSSL_strdup(ipasc);
     if (iptmp == NULL)
         return NULL;
-    p = iptmp + (p - ipasc);
+    p = iptmp + (slash - ipasc);
     *p++ = 0;
 
     iplen1 = ossl_a2i_ipadd(ipout, iptmp);
