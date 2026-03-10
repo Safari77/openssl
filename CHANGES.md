@@ -31,6 +31,13 @@ OpenSSL Releases
 
 ### Changes between 3.6 and 4.0 [xx XXX xxxx]
 
+ * Added restrictions on the maximum number of TLS key_shares (16) that a server
+   will pay attention to, as well as the maximum number of supported groups
+   (128) and sig algs (128). Any sent beyond this number are ignored in order
+   to avoid clients sending excessively long lists in these extensions.
+
+   *Matt Caswell*
+
  * The `openssl-x509(1)`, `openssl-req(1)` and `openssl-ca(1)` command-line
    utilities no longer have specialised built-in logic to add the SKID and AKID
    extensions, they are handled through configuration files and command-line
@@ -182,6 +189,15 @@ OpenSSL Releases
    nothing, leaving the global objects to be cleaned up by the Operating System.
 
    *Bob Beck*
+
+ * Critical extension enforcement for EXFLAG_BCONS_CRITICAL,
+   EXFLAG_AKID_CRITICAL, EXFLAG_SKID_CRITICAL, and EXFLAG_SAN_CRITICAL is
+   incorrect. These checks were intended as CA requirements to prevent
+   misinterpretation by verifiers that don't support certain extensions
+   However, since we do support these extensions, there is no requirement for
+   them to be marked as critical. Enforcing that on X509_V_FLAG_X509_STRICT was a mistake.
+
+   *Daniel Kubec*
 
  * Made `X509_ATTRIBUTE` accessor functions const-correct. The functions
    `X509_ATTRIBUTE_get0_object()`, `X509_ATTRIBUTE_get0_type()`, and

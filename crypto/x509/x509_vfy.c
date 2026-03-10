@@ -493,8 +493,7 @@ end:
 /* Check that the given certificate |x| is issued by the certificate |issuer| */
 static int check_issued(ossl_unused X509_STORE_CTX *ctx, const X509 *x, const X509 *issuer)
 {
-    /* XXX casts away const, remove cast when #30067 lands */
-    int err = ossl_x509_likely_issued((X509 *)issuer, (X509 *)x);
+    int err = ossl_x509_likely_issued(issuer, x);
 
     if (err == X509_V_OK)
         return 1;
@@ -674,10 +673,6 @@ static int check_extensions(X509_STORE_CTX *ctx)
                 CB_FAIL_IF((x->ex_kusage & KU_KEY_CERT_SIGN) == 0, ctx,
                     x, i, X509_V_ERR_PATHLEN_WITHOUT_KU_KEY_CERT_SIGN);
             }
-            CB_FAIL_IF((x->ex_flags & EXFLAG_CA) != 0
-                    && (x->ex_flags & EXFLAG_BCONS) != 0
-                    && (x->ex_flags & EXFLAG_BCONS_CRITICAL) == 0,
-                ctx, x, i, X509_V_ERR_CA_BCONS_NOT_CRITICAL);
             /* Check Key Usage according to RFC 5280 section 4.2.1.3 */
             if ((x->ex_flags & EXFLAG_CA) != 0) {
                 CB_FAIL_IF((x->ex_flags & EXFLAG_KUSAGE) == 0,
@@ -695,10 +690,6 @@ static int check_extensions(X509_STORE_CTX *ctx)
                            || x->altname == NULL)
                     && X509_NAME_entry_count(X509_get_subject_name(x)) == 0,
                 ctx, x, i, X509_V_ERR_SUBJECT_NAME_EMPTY);
-            CB_FAIL_IF(X509_NAME_entry_count(X509_get_subject_name(x)) == 0
-                    && x->altname != NULL
-                    && (x->ex_flags & EXFLAG_SAN_CRITICAL) == 0,
-                ctx, x, i, X509_V_ERR_EMPTY_SUBJECT_SAN_NOT_CRITICAL);
             /* Check SAN is non-empty according to RFC 5280 section 4.2.1.6 */
             CB_FAIL_IF(x->altname != NULL
                     && sk_GENERAL_NAME_num(x->altname) <= 0,
@@ -706,12 +697,6 @@ static int check_extensions(X509_STORE_CTX *ctx)
             /* Check sig alg consistency acc. to RFC 5280 section 4.1.1.2 */
             CB_FAIL_IF(X509_ALGOR_cmp(&x->sig_alg, &x->cert_info.signature) != 0,
                 ctx, x, i, X509_V_ERR_SIGNATURE_ALGORITHM_INCONSISTENCY);
-            CB_FAIL_IF(x->akid != NULL
-                    && (x->ex_flags & EXFLAG_AKID_CRITICAL) != 0,
-                ctx, x, i, X509_V_ERR_AUTHORITY_KEY_IDENTIFIER_CRITICAL);
-            CB_FAIL_IF(x->skid != NULL
-                    && (x->ex_flags & EXFLAG_SKID_CRITICAL) != 0,
-                ctx, x, i, X509_V_ERR_SUBJECT_KEY_IDENTIFIER_CRITICAL);
             if (X509_get_version(x) >= X509_VERSION_3) {
                 /* Check AKID presence acc. to RFC 5280 section 4.2.1.1 */
                 /*
@@ -2707,7 +2692,7 @@ void X509_STORE_CTX_set_error_depth(X509_STORE_CTX *ctx, int depth)
     ctx->error_depth = depth;
 }
 
-const X509 *X509_STORE_CTX_get_current_cert(const X509_STORE_CTX *ctx)
+X509 *X509_STORE_CTX_get_current_cert(const X509_STORE_CTX *ctx)
 {
     return ctx->current_cert;
 }
@@ -2729,7 +2714,7 @@ STACK_OF(X509) *X509_STORE_CTX_get1_chain(const X509_STORE_CTX *ctx)
     return X509_chain_up_ref(ctx->chain);
 }
 
-const X509 *X509_STORE_CTX_get0_current_issuer(const X509_STORE_CTX *ctx)
+X509 *X509_STORE_CTX_get0_current_issuer(const X509_STORE_CTX *ctx)
 {
     return ctx->current_issuer;
 }
@@ -2744,10 +2729,9 @@ X509_STORE_CTX *X509_STORE_CTX_get0_parent_ctx(const X509_STORE_CTX *ctx)
     return ctx->parent;
 }
 
-void X509_STORE_CTX_set_cert(X509_STORE_CTX *ctx, const X509 *x)
+void X509_STORE_CTX_set_cert(X509_STORE_CTX *ctx, X509 *x)
 {
-    /* XXX casts away const - fix by making ctx->cert const */
-    ctx->cert = (X509 *)x;
+    ctx->cert = x;
 }
 
 void X509_STORE_CTX_set0_rpk(X509_STORE_CTX *ctx, EVP_PKEY *rpk)
@@ -3089,7 +3073,7 @@ void X509_STORE_CTX_set_current_reasons(X509_STORE_CTX *ctx,
     ctx->current_reasons = current_reasons;
 }
 
-const X509 *X509_STORE_CTX_get0_cert(const X509_STORE_CTX *ctx)
+X509 *X509_STORE_CTX_get0_cert(const X509_STORE_CTX *ctx)
 {
     return ctx->cert;
 }
@@ -3408,7 +3392,7 @@ static int dane_match_cert(X509_STORE_CTX *ctx, X509 *cert, int depth)
                     break;
                 }
 
-                OPENSSL_free(dane->mcert);
+                X509_free(dane->mcert);
                 dane->mcert = cert;
                 dane->mdpth = depth;
                 dane->mtlsa = t;
