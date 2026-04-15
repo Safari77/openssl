@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,6 +14,10 @@
 #ifndef OPENSSL_ECH_H
 #define OPENSSL_ECH_H
 #pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <openssl/ssl.h>
 #include <openssl/hpke.h>
@@ -121,6 +125,10 @@ int SSL_CTX_ech_set1_outer_alpn_protos(SSL_CTX *s, const unsigned char *protos,
     const size_t protos_len);
 void SSL_CTX_ech_set_callback(SSL_CTX *ctx, SSL_ech_cb_func f);
 int SSL_set1_ech_config_list(SSL *ssl, const uint8_t *ecl, size_t ecl_len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 #endif

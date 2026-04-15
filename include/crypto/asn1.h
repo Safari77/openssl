@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -183,7 +183,7 @@ EVP_PKEY *ossl_d2i_PrivateKey_legacy(int keytype, EVP_PKEY **a,
     OSSL_LIB_CTX *libctx, const char *propq);
 X509_ALGOR *ossl_X509_ALGOR_from_nid(int nid, int ptype, void *pval);
 
-void ossl_asn1_string_set_bits_left(ASN1_STRING *str, unsigned int num);
+void ossl_asn1_bit_string_set_unused_bits(ASN1_STRING *str, unsigned int num);
 
 int asn1_item_embed_d2i(ASN1_VALUE **pval, const unsigned char **in,
     long len, const ASN1_ITEM *it, int tag, int aclass,

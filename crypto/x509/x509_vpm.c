@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -304,7 +304,7 @@ static int validate_local_part(const char *name, size_t len,
 static int validate_email_name(const char *name, size_t len, int rfc822)
 {
     size_t dns_len, local_len;
-    char *at, *next, *dnsname;
+    const char *at, *next, *dnsname;
     ossl_charset_t local_charset;
 
     /*
@@ -935,7 +935,14 @@ static const X509_VERIFY_PARAM default_table[] = {
         .auth_level = -1,
     },
     {
-        .name = "smime_sign", /* S/MIME sign parameters */
+        .name = "smime_encrypt", /* S/MIME encryption parameters */
+        .purpose = X509_PURPOSE_SMIME_ENCRYPT,
+        .trust = X509_TRUST_EMAIL,
+        .depth = -1,
+        .auth_level = -1,
+    },
+    {
+        .name = "smime_sign", /* S/MIME signature parameters */
         .purpose = X509_PURPOSE_SMIME_SIGN,
         .trust = X509_TRUST_EMAIL,
         .depth = -1,

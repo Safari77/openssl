@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -72,7 +72,7 @@ static int msvc_bio_vprintf(BIO *bio, const char *format, va_list args)
 }
 #endif
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 /*
  * This function is for unit test on windows only when built with Visual Studio
  */

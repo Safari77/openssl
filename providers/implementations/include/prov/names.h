@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -292,6 +292,7 @@
 #define PROV_DESCS_HKDF_SHA384_SIGN "OpenSSL HKDF-SHA384 via EVP_PKEY implementation"
 #define PROV_NAMES_HKDF_SHA512 "HKDF-SHA512:id-alg-hkdf-with-sha512:1.2.840.113549.1.9.16.3.30"
 #define PROV_DESCS_HKDF_SHA512_SIGN "OpenSSL HKDF-SHA512 via EVP_PKEY implementation"
+#define PROV_NAMES_IKEV2KDF "IKEV2KDF"
 #define PROV_NAMES_TLS1_3_KDF "TLS13-KDF"
 #define PROV_NAMES_SSKDF "SSKDF"
 #define PROV_NAMES_PBKDF1 "PBKDF1"

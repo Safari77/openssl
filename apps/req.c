@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -454,7 +454,7 @@ int req_main(int argc, char **argv)
             not_after = opt_arg();
             break;
         case OPT_DAYS:
-            days = atoi(opt_arg());
+            days = opt_int_arg();
             if (days <= UNSET_DAYS) {
                 BIO_printf(bio_err, "%s: -days parameter arg must be >= -1\n",
                     prog);

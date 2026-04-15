@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -71,6 +71,15 @@ struct servent *PASCAL getservbyname(const char *, const char *);
 #endif
 #ifndef SHUT_RDWR
 #define SHUT_RDWR SD_BOTH
+#endif
+
+/*
+ * Recent MINGW versions use Windows-style unsigned INVALID_SOCKET.
+ * Since OpenSSL uses int, this only silences an already-ignored warning.
+ */
+#if defined(__MINGW32__) && defined(INVALID_SOCKET)
+#undef INVALID_SOCKET
+#define INVALID_SOCKET (INT_PTR)(~0)
 #endif
 
 #else

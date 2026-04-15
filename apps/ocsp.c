@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2001-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -319,7 +319,7 @@ int ocsp_main(int argc, char **argv)
             break;
         case OPT_TIMEOUT:
 #ifndef OPENSSL_NO_SOCK
-            req_timeout = atoi(opt_arg());
+            req_timeout = opt_int_arg();
 #endif
             break;
         case OPT_URL:
@@ -515,7 +515,7 @@ int ocsp_main(int argc, char **argv)
             accept_count = opt_int_arg();
             break;
         case OPT_NDAYS:
-            ndays = atoi(opt_arg());
+            ndays = opt_int_arg();
             break;
         case OPT_RSIGNER:
             rsignfile = opt_arg();
@@ -567,7 +567,7 @@ int ocsp_main(int argc, char **argv)
             break;
         case OPT_MULTI:
 #ifdef HTTP_DAEMON
-            n_responders = atoi(opt_arg());
+            n_responders = opt_int_arg();
 #endif
             break;
         case OPT_PROV_CASES:
@@ -876,7 +876,7 @@ done_resp:
 
         i = OCSP_basic_verify(bs, verify_other, store, verify_flags);
         if (i <= 0 && issuers) {
-            i = OCSP_basic_verify(bs, issuers, store, OCSP_TRUSTOTHER);
+            i = OCSP_basic_verify(bs, issuers, store, verify_flags);
             if (i > 0)
                 ERR_clear_error();
         }

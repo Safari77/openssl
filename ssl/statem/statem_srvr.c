@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -309,20 +309,6 @@ int ossl_statem_server_read_transition(SSL_CONNECTION *s, int mt)
 
 err:
     /* No valid transition found */
-    if (SSL_CONNECTION_IS_DTLS(s) && mt == SSL3_MT_CHANGE_CIPHER_SPEC) {
-        BIO *rbio;
-
-        /*
-         * CCS messages don't have a message sequence number so this is probably
-         * because of an out-of-order CCS. We'll just drop it.
-         */
-        s->init_num = 0;
-        s->rwstate = SSL_READING;
-        rbio = SSL_get_rbio(SSL_CONNECTION_GET_SSL(s));
-        BIO_clear_retry_flags(rbio);
-        BIO_set_retry_read(rbio);
-        return 0;
-    }
     SSLfatal(s, SSL3_AD_UNEXPECTED_MESSAGE, SSL_R_UNEXPECTED_MESSAGE);
     return 0;
 }
@@ -508,8 +494,8 @@ OCSP_RESPONSE *ossl_get_ocsp_response(SSL_CONNECTION *s, int chainidx)
              * happening because of test cases.
              */
             ERR_set_mark();
-            if (((bs = OCSP_response_get1_basic(resp)) != NULL)
-                && ((sr = OCSP_resp_get0(bs, 0)) != NULL)) {
+            bs = OCSP_response_get1_basic(resp);
+            if (bs != NULL && (sr = OCSP_resp_get0(bs, 0)) != NULL) {
                 /* use the first single response to get the algorithm used */
                 cid = (OCSP_CERTID *)OCSP_SINGLERESP_get0_id(sr);
 
@@ -565,6 +551,8 @@ OCSP_RESPONSE *ossl_get_ocsp_response(SSL_CONNECTION *s, int chainidx)
                  */
                 if (i == num)
                     resp = NULL;
+            } else {
+                OCSP_BASICRESP_free(bs);
             }
 
             /*
@@ -1646,7 +1634,7 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL_CONNECTION *s, PACKET *pkt)
      * that ECH "worked."
      */
     if (s->server && PACKET_remaining(pkt) != 0) {
-        int rv = 0, innerflag = -1;
+        int rv = 0, innerflag = OSSL_ECH_UNKNOWN_CH_TYPE;
         size_t startofsessid = 0, startofexts = 0, echoffset = 0;
         size_t outersnioffset = 0; /* offset to SNI in outer */
         uint16_t echtype = OSSL_ECH_type_unknown; /* type of ECH seen */
@@ -1658,7 +1646,7 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL_CONNECTION *s, PACKET *pkt)
             &echoffset, &echtype, &innerflag,
             &outersnioffset);
         if (rv != 1) {
-            SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_BAD_EXTENSION);
+            /* SSLfatal already called */
             goto err;
         }
         if (innerflag == OSSL_ECH_INNER_CH_TYPE) {
@@ -1701,9 +1689,19 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL_CONNECTION *s, PACKET *pkt)
             }
         } else if (s->ext.ech.es != NULL) {
             PACKET newpkt;
+            int secondtime = s->ext.ech.success;
 
+            /*
+             * if ECH decrypt worked first time (success == 1) then fail
+             * if there's no ECH extension at all 2nd time
+             */
+            if (secondtime == 1 && echoffset == 0) {
+                SSLfatal(s, SSL_AD_MISSING_EXTENSION,
+                    SSL_R_TLSV13_ALERT_MISSING_EXTENSION);
+                goto err;
+            }
             if (ossl_ech_early_decrypt(s, pkt, &newpkt) != 1) {
-                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+                /* SSLfatal() already called */
                 goto err;
             }
             if (s->ext.ech.success == 1) {
@@ -1717,6 +1715,10 @@ MSG_PROCESS_RETURN tls_process_client_hello(SSL_CONNECTION *s, PACKET *pkt)
                     goto err;
                 }
                 *pkt = newpkt;
+            } else if (secondtime == 1 && s->ext.ech.success == 0) {
+                /* 2nd time decrypt failed */
+                SSLfatal(s, SSL_AD_DECRYPT_ERROR, ERR_R_INTERNAL_ERROR);
+                goto err;
             }
         }
     }
@@ -1884,6 +1886,11 @@ static int tls_early_post_process_client_hello(SSL_CONNECTION *s)
     /* Choose the server SSL/TLS/DTLS version. */
     protverr = ssl_choose_server_version(s, clienthello, &dgrd);
 
+#ifndef OPENSSL_NO_ECH
+    if (protverr && s->ext.ech.success == 1) {
+        SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, protverr);
+    }
+#endif
     if (protverr) {
         if (SSL_IS_FIRST_HANDSHAKE(s)) {
             /* like ssl3_get_record, send alert using remote version number */
@@ -4240,7 +4247,7 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
 {
     unsigned char *senc = NULL;
     EVP_CIPHER_CTX *ctx = NULL;
-    SSL_HMAC *hctx = NULL;
+    SSL_HMAC hctx, *constructed_hctx = NULL;
     unsigned char *p, *encdata1, *encdata2, *macdata1, *macdata2;
     const unsigned char *const_p;
     int len, slen_full, slen, lenfinal;
@@ -4276,8 +4283,7 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_EVP_LIB);
         goto err;
     }
-    hctx = ssl_hmac_new(tctx);
-    if (hctx == NULL) {
+    if ((constructed_hctx = ssl_hmac_construct(tctx, &hctx)) == NULL) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_SSL_LIB);
         goto err;
     }
@@ -4328,13 +4334,13 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
 
         if (tctx->ext.ticket_key_evp_cb != NULL)
             ret = tctx->ext.ticket_key_evp_cb(ssl, key_name, iv, ctx,
-                ssl_hmac_get0_EVP_MAC_CTX(hctx),
+                ssl_hmac_get0_EVP_MAC_CTX(&hctx),
                 1);
 #ifndef OPENSSL_NO_DEPRECATED_3_0
         else if (tctx->ext.ticket_key_cb != NULL)
             /* if 0 is returned, write an empty ticket */
             ret = tctx->ext.ticket_key_cb(ssl, key_name, iv, ctx,
-                ssl_hmac_get0_HMAC_CTX(hctx), 1);
+                ssl_hmac_get0_HMAC_CTX(&hctx), 1);
 #endif
 
         if (ret == 0) {
@@ -4355,7 +4361,7 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
             }
             OPENSSL_free(senc);
             EVP_CIPHER_CTX_free(ctx);
-            ssl_hmac_free(hctx);
+            ssl_hmac_destruct(constructed_hctx);
             return CON_FUNC_SUCCESS;
         }
         if (ret < 0) {
@@ -4368,28 +4374,17 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
             goto err;
         }
     } else {
-        EVP_CIPHER *cipher = EVP_CIPHER_fetch(sctx->libctx, "AES-256-CBC",
-            sctx->propq);
-
-        if (cipher == NULL) {
-            /* Error is already recorded */
-            SSLfatal_alert(s, SSL_AD_INTERNAL_ERROR);
-            goto err;
-        }
-
-        iv_len = EVP_CIPHER_get_iv_length(cipher);
+        iv_len = EVP_CIPHER_get_iv_length(sctx->tktenc);
         if (iv_len < 0
             || RAND_bytes_ex(sctx->libctx, iv, iv_len, 0) <= 0
-            || !EVP_EncryptInit_ex(ctx, cipher, NULL,
+            || !EVP_EncryptInit_ex(ctx, sctx->tktenc, NULL,
                 tctx->ext.secure->tick_aes_key, iv)
-            || !ssl_hmac_init(hctx, tctx->ext.secure->tick_hmac_key,
+            || !ssl_hmac_init(&hctx, tctx->ext.secure->tick_hmac_key,
                 sizeof(tctx->ext.secure->tick_hmac_key),
                 "SHA256")) {
-            EVP_CIPHER_free(cipher);
             SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
             goto err;
         }
-        EVP_CIPHER_free(cipher);
         memcpy(key_name, tctx->ext.tick_key_name,
             sizeof(tctx->ext.tick_key_name));
     }
@@ -4415,11 +4410,11 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
         || encdata1 + len != encdata2
         || len + lenfinal > slen + EVP_MAX_BLOCK_LENGTH
         || !WPACKET_get_total_written(pkt, &macendoffset)
-        || !ssl_hmac_update(hctx,
+        || !ssl_hmac_update(&hctx,
             (unsigned char *)s->init_buf->data + macoffset,
             macendoffset - macoffset)
         || !WPACKET_reserve_bytes(pkt, EVP_MAX_MD_SIZE, &macdata1)
-        || !ssl_hmac_final(hctx, macdata1, &hlen, EVP_MAX_MD_SIZE)
+        || !ssl_hmac_final(&hctx, macdata1, &hlen, EVP_MAX_MD_SIZE)
         || hlen > EVP_MAX_MD_SIZE
         || !WPACKET_allocate_bytes(pkt, hlen, &macdata2)
         || macdata1 != macdata2) {
@@ -4437,7 +4432,7 @@ static CON_FUNC_RETURN construct_stateless_ticket(SSL_CONNECTION *s,
 err:
     OPENSSL_free(senc);
     EVP_CIPHER_CTX_free(ctx);
-    ssl_hmac_free(hctx);
+    ssl_hmac_destruct(constructed_hctx);
     return ok;
 }
 

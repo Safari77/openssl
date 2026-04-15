@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -473,7 +473,7 @@ int ossl_cms_DigestAlgorithm_find_ctx(EVP_MD_CTX *mctx, BIO *chain,
             return 0;
         }
         BIO_get_md_ctx(chain, &mtmp);
-        if (EVP_MD_CTX_get_type(mtmp) == nid
+        if (EVP_MD_CTX_get_type(mtmp) == nid || OBJ_sn2nid(EVP_MD_CTX_get0_name(mtmp)) == nid
             /*
              * Workaround for broken implementations that use signature
              * algorithm OID instead of digest.

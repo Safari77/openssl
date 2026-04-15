@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -630,6 +630,8 @@ static int ssl_ech_servername_cb(SSL *s, int *ad, void *arg)
                         "ssl_ech_servername_cb: Not switching context "
                         "- no name match (%d).\n",
                         check_host);
+                if (OPENSSL_strcasecmp(servername, p->servername) != 0)
+                    return p->extension_error;
             }
         }
     } else {
@@ -637,6 +639,14 @@ static int ssl_ech_servername_cb(SSL *s, int *ad, void *arg)
             BIO_printf(p->biodebug,
                 "ssl_ech_servername_cb: Not switching context "
                 "- no ECH SUCCESS\n");
+        if (servername != NULL) {
+            if (OPENSSL_strcasecmp(servername, p->servername))
+                return p->extension_error;
+            if (ctx2 != NULL) {
+                BIO_puts(p->biodebug, "Switching server context.\n");
+                SSL_set_SSL_CTX(s, ctx2);
+            }
+        }
     }
     return SSL_TLSEXT_ERR_OK;
 }
@@ -1339,9 +1349,9 @@ const OPTIONS s_server_options[] = {
     { "no-CAstore", OPT_NOCASTORE, '-',
         "Do not load certificates from the default certificates store URI" },
     { "nocert", OPT_NOCERT, '-', "Don't use any certificates (Anon-DH)" },
-    { "verify", OPT_VERIFY, 'n', "Turn on peer certificate verification" },
-    { "Verify", OPT_UPPER_V_VERIFY, 'n',
-        "Turn on peer certificate verification, must have a cert" },
+    { "verify", OPT_VERIFY, 'p', "Turn on peer certificate verification, set depth" },
+    { "Verify", OPT_UPPER_V_VERIFY, 'p',
+        "Turn on peer certificate verification, must have a cert, set depth" },
     { "nameopt", OPT_NAMEOPT, 's', "Certificate subject/issuer name printing options" },
     { "cert", OPT_CERT, '<', "Server certificate file to use; default " TEST_CERT },
     { "cert2", OPT_CERT2, '<',
@@ -1432,7 +1442,7 @@ const OPTIONS s_server_options[] = {
         "Provide certificate status response(s) if requested, for the whole chain" },
     { "status_verbose", OPT_STATUS_VERBOSE, '-',
         "Print more output in certificate status callback" },
-    { "status_timeout", OPT_STATUS_TIMEOUT, 'n',
+    { "status_timeout", OPT_STATUS_TIMEOUT, 'N',
         "Status request responder timeout" },
     { "status_url", OPT_STATUS_URL, 's', "Status request fallback URL" },
     { "proxy", OPT_PROXY, 's',
@@ -1489,9 +1499,9 @@ const OPTIONS s_server_options[] = {
 #endif
 
     OPT_SECTION("Protocol and version"),
-    { "max_early_data", OPT_MAX_EARLY, 'n',
+    { "max_early_data", OPT_MAX_EARLY, 'N',
         "The maximum number of bytes of early data as advertised in tickets" },
-    { "recv_max_early_data", OPT_RECV_MAX_EARLY, 'n',
+    { "recv_max_early_data", OPT_RECV_MAX_EARLY, 'N',
         "The maximum number of bytes of early data (hard limit)" },
     { "early_data", OPT_EARLY_DATA, '-', "Attempt to read early data" },
     { "num_tickets", OPT_S_NUM_TICKETS, 'n',
@@ -1874,13 +1884,13 @@ int s_server_main(int argc, char *argv[])
             break;
         case OPT_VERIFY:
             s_server_verify = SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
-            verify_args.depth = atoi(opt_arg());
+            verify_args.depth = opt_int_arg();
             if (!s_quiet)
                 BIO_printf(bio_err, "verify depth is %d\n", verify_args.depth);
             break;
         case OPT_UPPER_V_VERIFY:
             s_server_verify = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE;
-            verify_args.depth = atoi(opt_arg());
+            verify_args.depth = opt_int_arg();
             if (!s_quiet)
                 BIO_printf(bio_err,
                     "verify depth is %d, must return a certificate\n",
@@ -2064,7 +2074,7 @@ int s_server_main(int argc, char *argv[])
         case OPT_STATUS_TIMEOUT:
 #ifndef OPENSSL_NO_OCSP
             s_tlsextstatus = 1;
-            tlscstatp.timeout = atoi(opt_arg());
+            tlscstatp.timeout = opt_int_arg();
 #endif
             break;
         case OPT_PROXY:
@@ -2290,35 +2300,35 @@ int s_server_main(int argc, char *argv[])
             keymatexportlabel = opt_arg();
             break;
         case OPT_KEYMATEXPORTLEN:
-            keymatexportlen = atoi(opt_arg());
+            keymatexportlen = opt_int_arg();
             break;
         case OPT_ASYNC:
             async = 1;
             break;
         case OPT_MAX_SEND_FRAG:
-            max_send_fragment = atoi(opt_arg());
+            max_send_fragment = opt_int_arg();
             break;
         case OPT_SPLIT_SEND_FRAG:
-            split_send_fragment = atoi(opt_arg());
+            split_send_fragment = opt_int_arg();
             break;
         case OPT_MAX_PIPELINES:
-            max_pipelines = atoi(opt_arg());
+            max_pipelines = opt_int_arg();
             break;
         case OPT_READ_BUF:
-            read_buf_len = atoi(opt_arg());
+            read_buf_len = opt_int_arg();
             break;
         case OPT_KEYLOG_FILE:
             keylog_file = opt_arg();
             break;
         case OPT_MAX_EARLY:
-            max_early_data = atoi(opt_arg());
+            max_early_data = opt_int_arg();
             if (max_early_data < 0) {
                 BIO_puts(bio_err, "Invalid value for max_early_data\n");
                 goto end;
             }
             break;
         case OPT_RECV_MAX_EARLY:
-            recv_max_early_data = atoi(opt_arg());
+            recv_max_early_data = opt_int_arg();
             if (recv_max_early_data < 0) {
                 BIO_puts(bio_err, "Invalid value for recv_max_early_data\n");
                 goto end;

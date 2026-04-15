@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -23,6 +23,7 @@ typedef struct ht_internal_st HT;
  * Represents a key to a hashtable
  */
 typedef struct ht_key_header_st {
+    uint64_t cached_hash;
     size_t keysize;
     size_t bufsize;
     uint8_t *keybuf;
@@ -169,10 +170,29 @@ static ossl_inline ossl_unused int ossl_key_raw_copy(HT_KEY *key, const uint8_t 
         (key)->keysize += tmplen;                                                      \
     } while (0)
 
+#define HT_INIT_KEY_CACHED(key, hash)         \
+    do {                                      \
+        HT_INIT_KEY((key));                   \
+        (key)->key_header.cached_hash = hash; \
+    } while (0)
+
+#define HT_INIT_KEY_EXTERNAL(key, buf, len) \
+    do {                                    \
+        HT_INIT_KEY((key));                 \
+        (key)->key_header.keybuf = (buf);   \
+        (key)->key_header.keysize = (len);  \
+    } while (0)
+
+#define HT_KEY_GET_HASH(key) (key)->key_header.cached_hash
+
 /*
  * Resets a hash table key to a known state
  */
-#define HT_KEY_RESET(key) memset((key)->key_header.keybuf, 0, (key)->key_header.keysize)
+#define HT_KEY_RESET(key)                                               \
+    do {                                                                \
+        memset((key)->key_header.keybuf, 0, (key)->key_header.keysize); \
+        (key)->key_header.cached_hash = 0;                              \
+    } while (0)
 
 /*
  * Sets a scalar field in a hash table key

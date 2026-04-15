@@ -89,9 +89,9 @@ value it points to will be set to an error code when the certificate
 is not temporally valid, or 0 when the certificate is temporally valid.
 
 The integer pointed to by I<error> will be set to
-X509_V_ERROR_ERROR_IN_CERT_NOT_BEFORE_FIELD
+X509_V_ERR_ERROR_IN_CERT_NOT_BEFORE_FIELD
 or
-X509_V_ERROR_ERROR_IN_CERT_NOT_AFTER_FIELD
+X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD
 if the certificate has an invalid notBefore or notAfter field, respectively.
 
 The integer pointed to by I<error> will be set to
@@ -154,7 +154,7 @@ X509_check_certificate_times() was added in OpenSSL 4.0.
 
 =head1 COPYRIGHT
 
-Copyright 2017-2025 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2017-2026 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -260,7 +260,7 @@ static int self_test_kdf(const ST_DEFINITION *t, OSSL_SELF_TEST *st,
     OSSL_LIB_CTX *libctx)
 {
     int ret = 0;
-    unsigned char out[128];
+    unsigned char out[256];
     EVP_KDF *kdf = NULL;
     EVP_KDF_CTX *ctx = NULL;
     OSSL_PARAM *params = NULL;
@@ -294,6 +294,9 @@ err:
     EVP_KDF_free(kdf);
     EVP_KDF_CTX_free(ctx);
     OSSL_PARAM_free(params);
+#ifdef OPENSSL_PEDANTIC_ZEROIZATION
+    OPENSSL_cleanse(out, 256);
+#endif
     OSSL_SELF_TEST_onend(st, ret);
     return ret;
 }

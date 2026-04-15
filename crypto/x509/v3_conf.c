@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -399,7 +399,7 @@ update_req_extensions(X509_REQ *req, int *pnid, STACK_OF(X509_EXTENSION) *exts)
     }
 
     if (loc != -1) {
-        X509_ATTRIBUTE *att = X509at_delete_attr(req->req_info.attributes, loc);
+        X509_ATTRIBUTE *att = X509_REQ_delete_attr(req, loc);
 
         if (att == NULL)
             goto end;

@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2023-2025 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2023-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -226,6 +226,10 @@ my %params = (
     'OSSL_KDF_PARAM_PKCS5' =>        "pkcs5",                    # int
     'OSSL_KDF_PARAM_UKM' =>          "ukm",                      # octet string
     'OSSL_KDF_PARAM_CEK_ALG' =>      "cekalg",                   # utf8 string
+    'OSSL_KDF_PARAM_IKEV2KDF_NI' =>  "ni",                       # octet string
+    'OSSL_KDF_PARAM_IKEV2KDF_NR' =>  "nr",                       # octet string
+    'OSSL_KDF_PARAM_IKEV2KDF_SPII' => "spii",                    # octet string
+    'OSSL_KDF_PARAM_IKEV2KDF_SPIR' => "spir",                    # octet string
     'OSSL_KDF_PARAM_SCRYPT_N' =>     "n",                        # uint64_t
     'OSSL_KDF_PARAM_SCRYPT_R' =>     "r",                        # uint32_t
     'OSSL_KDF_PARAM_SCRYPT_P' =>     "p",                        # uint32_t

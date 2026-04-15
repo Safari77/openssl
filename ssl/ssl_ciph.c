@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -2260,6 +2260,17 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
         maxlen -= 2;
     if (s->mode & SSL_MODE_SEND_FALLBACK_SCSV)
         maxlen -= 2;
+
+    /* RFC 8701: prepend a GREASE cipher suite value */
+    if ((s->options & SSL_OP_GREASE) && !s->server) {
+        uint16_t grease_cs = ossl_grease_value(s, OSSL_GREASE_CIPHER);
+
+        if (!WPACKET_put_bytes_u16(pkt, grease_cs)) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+            return 0;
+        }
+        totlen += 2;
+    }
 
     for (i = 0; i < sk_SSL_CIPHER_num(sk) && totlen < maxlen; i++) {
         const SSL_CIPHER *c;

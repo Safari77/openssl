@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -456,6 +456,58 @@ static __owur int sample_scalar(scalar *out, EVP_MD_CTX *mdctx)
     return 1;
 }
 
+static CRYPTO_ONCE ml_kem_ntt_once = CRYPTO_ONCE_STATIC_INIT;
+
+#if defined(_ARCH_PPC64)
+#include "crypto/ppc_arch.h"
+#endif
+
+#if defined(MLKEM_NTT_PPC_ASM) && defined(_ARCH_PPC64)
+/*
+ * PPC64LE Platform supports.
+ */
+typedef void (*ml_kem_scalar_ntt_fn)(scalar *p);
+typedef void (*ml_kem_scalar_inverse_ntt_fn)(scalar *p);
+
+static void scalar_ntt_generic(scalar *p);
+static void scalar_inverse_ntt_generic(scalar *p);
+
+static ml_kem_scalar_ntt_fn scalar_ntt = scalar_ntt_generic;
+static ml_kem_scalar_inverse_ntt_fn scalar_inverse_ntt = scalar_inverse_ntt_generic;
+
+void mlkem_ntt_ppc(uint16_t *c);
+void mlkem_inverse_ntt_ppc(uint16_t *c);
+
+static void scalar_ntt_ppc(scalar *s)
+{
+    mlkem_ntt_ppc(s->c);
+}
+
+static void scalar_inverse_ntt_ppc(scalar *s)
+{
+    mlkem_inverse_ntt_ppc(s->c);
+}
+#else
+#define scalar_ntt_generic scalar_ntt
+#define scalar_inverse_ntt_generic scalar_inverse_ntt
+#endif
+
+/*
+ * Initialize NTT function pointers to PPC64le implementations if available.
+ * Scalar implementations are used by default.
+ */
+static void ml_kem_ntt_init(void)
+{
+#if defined(MLKEM_NTT_PPC_ASM) && defined(_ARCH_PPC64)
+#if defined(__LITTLE_ENDIAN__) || (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    if (OPENSSL_ppccap_P & PPC_CRYPTO207) {
+        scalar_ntt = scalar_ntt_ppc;
+        scalar_inverse_ntt = scalar_inverse_ntt_ppc;
+    }
+#endif
+#endif
+}
+
 /*-
  * reduce_once reduces 0 <= x < 2*kPrime, mod kPrime.
  *
@@ -506,7 +558,7 @@ static void scalar_mult_const(scalar *s, uint16_t a)
  * elements in GF(3329^2), with the coefficients of the elements being
  * consecutive entries in |s->c|.
  */
-static void scalar_ntt(scalar *s)
+static void scalar_ntt_generic(scalar *s)
 {
     const uint16_t *roots = kNTTRoots;
     uint16_t *end = s->c + DEGREE;
@@ -538,7 +590,7 @@ static void scalar_ntt(scalar *s)
  * iFFT to account for the fact that 3329 does not have a 512th root of unity,
  * using the precomputed 128 roots of unity stored in InverseNTTRoots.
  */
-static void scalar_inverse_ntt(scalar *s)
+static void scalar_inverse_ntt_generic(scalar *s)
 {
     const uint16_t *roots = kInverseNTTRoots;
     uint16_t *end = s->c + DEGREE;
@@ -1449,6 +1501,30 @@ static int encap(uint8_t *ctext, uint8_t secret[ML_KEM_SHARED_SECRET_BYTES],
 }
 
 /*
+ * Hash the input message |m'| and public key digest |h|
+ * to obtain |K| and |r|.
+ */
+static int hash_kr(uint8_t *out, uint8_t *in,
+    EVP_MD_CTX *mdctx, const ML_KEM_KEY *key)
+{
+    unsigned int sz, wanted;
+
+    wanted = ML_KEM_SHARED_SECRET_BYTES + ML_KEM_RANDOM_BYTES;
+    return (EVP_DigestInit_ex(mdctx, key->sha3_512_md, NULL)
+        && EVP_DigestUpdate(mdctx, in, ML_KEM_RANDOM_BYTES)
+        && EVP_DigestUpdate(mdctx, key->pkhash, ML_KEM_PKHASH_BYTES)
+        && EVP_DigestFinal_ex(mdctx, out, &sz)
+        && ossl_assert(sz == wanted));
+}
+
+/*-
+ * Decap needs space for: Kbar | K | r | m'
+ * We slice up a single buffer to hold them all.
+ * We don't need to cleanse the public pkhash value.
+ */
+#define DECAP_BUFFER_SZ (2 * ML_KEM_SHARED_SECRET_BYTES + 2 * ML_KEM_RANDOM_BYTES)
+
+/*
  * FIPS 203, Section 6.3, Algorithm 18: ML-KEM.Decaps_internal
  *
  * Barring failure of the supporting SHA3/SHAKE primitives, this is fully
@@ -1463,11 +1539,11 @@ static int decap(uint8_t secret[ML_KEM_SHARED_SECRET_BYTES],
     const uint8_t *ctext, uint8_t *tmp_ctext, scalar *tmp,
     EVP_MD_CTX *mdctx, const ML_KEM_KEY *key)
 {
-    uint8_t decrypted[ML_KEM_SHARED_SECRET_BYTES + ML_KEM_PKHASH_BYTES];
-    uint8_t failure_key[ML_KEM_RANDOM_BYTES];
-    uint8_t Kr[ML_KEM_SHARED_SECRET_BYTES + ML_KEM_RANDOM_BYTES];
+    uint8_t buf[DECAP_BUFFER_SZ];
+    uint8_t *failure_key = buf; /* Kbar */
+    uint8_t *Kr = failure_key + ML_KEM_SHARED_SECRET_BYTES;
     uint8_t *r = Kr + ML_KEM_SHARED_SECRET_BYTES;
-    const uint8_t *pkhash = key->pkhash;
+    uint8_t *m = r + ML_KEM_RANDOM_BYTES; /* m' */
     const ML_KEM_VINFO *vinfo = key->vinfo;
     int i;
     uint8_t mask;
@@ -1493,20 +1569,18 @@ static int decap(uint8_t secret[ML_KEM_SHARED_SECRET_BYTES],
             vinfo->algorithm_name);
         return 0;
     }
-    decrypt_cpa(decrypted, ctext, tmp, key);
-    memcpy(decrypted + ML_KEM_SHARED_SECRET_BYTES, pkhash, ML_KEM_PKHASH_BYTES);
-    if (!hash_g(Kr, decrypted, sizeof(decrypted), mdctx, key)
-        || !encrypt_cpa(tmp_ctext, decrypted, r, tmp, mdctx, key)) {
+    decrypt_cpa(m, ctext, tmp, key);
+    if (!hash_kr(Kr, m, mdctx, key)
+        || !encrypt_cpa(tmp_ctext, m, r, tmp, mdctx, key)) {
         memcpy(secret, failure_key, ML_KEM_SHARED_SECRET_BYTES);
-        OPENSSL_cleanse(decrypted, ML_KEM_SHARED_SECRET_BYTES);
-        return 1;
+        goto end;
     }
     mask = constant_time_eq_int_8(0,
         CRYPTO_memcmp(ctext, tmp_ctext, vinfo->ctext_bytes));
     for (i = 0; i < ML_KEM_SHARED_SECRET_BYTES; i++)
         secret[i] = constant_time_select_8(mask, Kr[i], failure_key[i]);
-    OPENSSL_cleanse(decrypted, ML_KEM_SHARED_SECRET_BYTES);
-    OPENSSL_cleanse(Kr, sizeof(Kr));
+end:
+    OPENSSL_cleanse(buf, DECAP_BUFFER_SZ);
     return 1;
 }
 
@@ -1594,6 +1668,8 @@ void ossl_ml_kem_key_reset(ML_KEM_KEY *key)
 /* Retrieve the parameters of one of the ML-KEM variants */
 const ML_KEM_VINFO *ossl_ml_kem_get_vinfo(int evp_type)
 {
+    (void)CRYPTO_THREAD_run_once(&ml_kem_ntt_once, ml_kem_ntt_init);
+
     switch (evp_type) {
     case EVP_PKEY_ML_KEM_512:
         return &vinfo_map[ML_KEM_512_VINFO];
@@ -1603,6 +1679,27 @@ const ML_KEM_VINFO *ossl_ml_kem_get_vinfo(int evp_type)
         return &vinfo_map[ML_KEM_1024_VINFO];
     }
     return NULL;
+}
+
+/*
+ * @brief Fetch digest algorithms based on a propq.
+ * For the import case ossl_ml_kem_key_new() gets passed a NULL propq,
+ * so the propq is optionally deferred to the import using OSSL_PARAM.
+ */
+int ossl_ml_kem_key_fetch_digest(ML_KEM_KEY *key, const char *propq)
+{
+    if (key->shake128_md != NULL) {
+        EVP_MD_free(key->shake128_md);
+        EVP_MD_free(key->shake256_md);
+        EVP_MD_free(key->sha3_256_md);
+        EVP_MD_free(key->sha3_512_md);
+    }
+    key->shake128_md = EVP_MD_fetch(key->libctx, "SHAKE128", propq);
+    key->shake256_md = EVP_MD_fetch(key->libctx, "SHAKE256", propq);
+    key->sha3_256_md = EVP_MD_fetch(key->libctx, "SHA3-256", propq);
+    key->sha3_512_md = EVP_MD_fetch(key->libctx, "SHA3-512", propq);
+    return (key->shake128_md != NULL && key->shake256_md != NULL
+        && key->sha3_256_md != NULL && key->sha3_512_md != NULL);
 }
 
 ML_KEM_KEY *ossl_ml_kem_key_new(OSSL_LIB_CTX *libctx, const char *properties,
@@ -1623,17 +1720,10 @@ ML_KEM_KEY *ossl_ml_kem_key_new(OSSL_LIB_CTX *libctx, const char *properties,
     key->vinfo = vinfo;
     key->libctx = libctx;
     key->prov_flags = ML_KEM_KEY_PROV_FLAGS_DEFAULT;
-    key->shake128_md = EVP_MD_fetch(libctx, "SHAKE128", properties);
-    key->shake256_md = EVP_MD_fetch(libctx, "SHAKE256", properties);
-    key->sha3_256_md = EVP_MD_fetch(libctx, "SHA3-256", properties);
-    key->sha3_512_md = EVP_MD_fetch(libctx, "SHA3-512", properties);
     key->d = key->z = key->rho = key->pkhash = key->encoded_dk = key->seedbuf = NULL;
     key->s = key->m = key->t = NULL;
-
-    if (key->shake128_md != NULL
-        && key->shake256_md != NULL
-        && key->sha3_256_md != NULL
-        && key->sha3_512_md != NULL)
+    key->shake128_md = key->shake256_md = key->sha3_256_md = key->sha3_512_md = NULL;
+    if (ossl_ml_kem_key_fetch_digest(key, properties))
         return key;
 
     ossl_ml_kem_key_free(key);

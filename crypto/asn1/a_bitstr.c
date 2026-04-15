@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,25 +14,6 @@
 #include "asn1_local.h"
 
 #include <crypto/asn1.h>
-
-static void
-asn1_bit_string_clear_unused_bits(ASN1_BIT_STRING *abs)
-{
-    abs->flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07);
-}
-
-static int asn1_bit_string_set_unused_bits(ASN1_BIT_STRING *abs,
-    uint8_t unused_bits)
-{
-    if (unused_bits > 7)
-        return 0;
-
-    asn1_bit_string_clear_unused_bits(abs);
-
-    abs->flags |= ASN1_STRING_FLAG_BITS_LEFT | unused_bits;
-
-    return 1;
-}
 
 int ASN1_BIT_STRING_set(ASN1_BIT_STRING *x, unsigned char *d, int len)
 {
@@ -110,7 +91,7 @@ ASN1_BIT_STRING *ossl_c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
      * We do this to preserve the settings.  If we modify the settings, via
      * the _set_bit function, we will recalculate on output
      */
-    ossl_asn1_string_set_bits_left(ret, i);
+    ossl_asn1_bit_string_set_unused_bits(ret, i);
 
     if (len-- > 1) { /* using one because of the bits left byte */
         s = OPENSSL_malloc((int)len);
@@ -187,9 +168,7 @@ int ASN1_BIT_STRING_set_bit(ASN1_BIT_STRING *a, int n, int value)
             unused_bits -= 2;
         if ((u8 & 0x55) != 0)
             unused_bits -= 1;
-
-        if (!asn1_bit_string_set_unused_bits(a, unused_bits))
-            return 0;
+        ossl_asn1_bit_string_set_unused_bits(a, unused_bits);
     }
     return 1;
 }
@@ -292,5 +271,7 @@ int ASN1_BIT_STRING_set1(ASN1_BIT_STRING *abs, const uint8_t *data, size_t lengt
         return 0;
     abs->type = V_ASN1_BIT_STRING;
 
-    return asn1_bit_string_set_unused_bits(abs, unused_bits);
+    ossl_asn1_bit_string_set_unused_bits(abs, unused_bits);
+
+    return 1;
 }

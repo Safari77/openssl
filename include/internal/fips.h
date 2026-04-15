@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2025-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -89,6 +89,13 @@ typedef enum {
     ST_ID_KDF_KBKDF_KMAC,
 #endif
     ST_ID_KDF_HKDF,
+#ifndef OPENSSL_NO_IKEV2KDF
+    ST_ID_KDF_IKEV2KDF_GEN,
+    ST_ID_KDF_IKEV2KDF_DKM1,
+    ST_ID_KDF_IKEV2KDF_DKM2,
+    ST_ID_KDF_IKEV2KDF_DKM3,
+    ST_ID_KDF_IKEV2KDF_REKEY,
+#endif
 #ifndef OPENSSL_NO_SNMPKDF
     ST_ID_KDF_SNMPKDF,
 #endif

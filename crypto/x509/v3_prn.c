@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -201,7 +201,7 @@ static int unknown_ext_print(BIO *out, const unsigned char *ext, int extlen,
 }
 
 #ifndef OPENSSL_NO_STDIO
-int X509V3_EXT_print_fp(FILE *fp, X509_EXTENSION *ext, int flag, int indent)
+int X509V3_EXT_print_fp(FILE *fp, const X509_EXTENSION *ext, int flag, int indent)
 {
     BIO *bio_tmp;
     int ret;

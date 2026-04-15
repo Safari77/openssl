@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -339,7 +339,7 @@ static int test_drop_empty_cert_keyids(void)
         || !TEST_int_eq(sk_X509_EXTENSION_num(exts), 1))
         goto err;
 
-    /* Request "empty" SKID and AKID in order to drop any previous values */
+    /* Request "empty" SKID in order to drop any previous value */
     NCONF_free(conf);
     if (!TEST_ptr(conf = NCONF_new(NULL))
         || !TEST_int_ge(BIO_printf(bio, "subjectKeyIdentifier = none\n"), 0)

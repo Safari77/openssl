@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -92,12 +92,7 @@ const X509_EXTENSION *X509v3_get_ext(const STACK_OF(X509_EXTENSION) *x, int loc)
 
 X509_EXTENSION *X509v3_delete_ext(STACK_OF(X509_EXTENSION) *x, int loc)
 {
-    X509_EXTENSION *ret;
-
-    if (x == NULL || sk_X509_EXTENSION_num(x) <= loc || loc < 0)
-        return NULL;
-    ret = sk_X509_EXTENSION_delete(x, loc);
-    return ret;
+    return sk_X509_EXTENSION_delete(x, loc);
 }
 
 X509_EXTENSION *X509v3_delete_extension(STACK_OF(X509_EXTENSION) **x, int loc)
