@@ -850,8 +850,10 @@ static void port_bind_channel(QUIC_PORT *port, const BIO_ADDR *peer,
         if (!ossl_quic_provide_initial_secret(ch->port->engine->libctx,
                 ch->port->engine->propq,
                 dcid, /* is_server */ 1,
-                ch->qrx, NULL))
+                ch->qrx, NULL)) {
+            ossl_quic_channel_free(ch);
             return;
+        }
 
     if (odcid->id_len != 0) {
         /*
@@ -1595,6 +1597,13 @@ static void port_default_packet_handler(QUIC_URXE *e, void *arg,
      * we assume this is an attempt to make a new connection.
      */
     if (!port->allow_incoming)
+        goto undesirable;
+
+    /*
+     * packet without destination connection id is invalid/corrupted here.
+     * stop wasting CPU cycles now.
+     */
+    if (dcid == NULL)
         goto undesirable;
 
     /*

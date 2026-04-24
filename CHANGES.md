@@ -31,6 +31,10 @@ OpenSSL Releases
 
 ### Changes between 4.0 and 4.1 [xx XXX xxxx]
 
+ * Added test framework for testing function memory allocation failures.
+
+   *Jakub Zelenka*
+
  * Improved DTLS handshake robustness under UDP reordering by buffering and
    replaying early ChangeCipherSpec (CCS) records at the expected state.
 
@@ -105,7 +109,7 @@ OpenSSL Releases
 
    *Helen Zhang*
 
-### Changes between 3.6 and 4.0 [xx XXX xxxx]
+### Changes between 3.6 and 4.0.0 [14 Apr 2026]
 
  * Added `-expected-rpks` option to the `openssl s_client`
    and `openssl s_server` commands.  This makes it possible to specify
