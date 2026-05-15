@@ -82,12 +82,16 @@ IF[{- !$disabled{tests} -}]
   ENDIF
 
   IF[{- !$disabled{'allocfail-tests'} -}]
-    PROGRAMS{noinst}=handshake-memfail x509-memfail load_key_certs_crls_memfail
+    PROGRAMS{noinst}=handshake-memfail x509-memfail load_key_certs_crls_memfail property-memfail
   ENDIF
 
   IF[{- !$disabled{quic} -}]
     PROGRAMS{noinst}=priority_queue_test quicfaultstest quicapitest \
                      quic_newcid_test quic_srt_gen_test
+  ENDIF
+
+  IF[{- !$disabled{quic} && !$disabled{qlog} -}]
+    PROGRAMS{noinst}=quic_memfail_test
   ENDIF
 
   IF[{- !$disabled{qlog} -}]
@@ -449,6 +453,12 @@ IF[{- !$disabled{tests} -}]
       SOURCE[quic_qlog_test]=quic_qlog_test.c
       INCLUDE[quic_qlog_test]=../include ../apps/include
       DEPEND[quic_qlog_test]=../libcrypto.a ../libssl.a libtestutil.a
+
+    IF[{- !$disabled{quic} -}]
+      SOURCE[quic_memfail_test]=quic_memfail_test.c
+      INCLUDE[quic_memfail_test]=../include ../apps/include
+      DEPEND[quic_memfail_test]=../libcrypto.a ../libssl.a libtestutil.a
+    ENDIF
   ENDIF
 
   SOURCE[asynctest]=asynctest.c
@@ -632,6 +642,10 @@ IF[{- !$disabled{tests} -}]
           ../crypto/asn1/a_time.c ../crypto/ctype.c
   INCLUDE[load_key_certs_crls_memfail]=.. ../include ../apps/include
   DEPEND[load_key_certs_crls_memfail]=libtestutil.a ../libcrypto.a ../libssl.a
+
+  SOURCE[property-memfail]=property_memfail.c
+  INCLUDE[property-memfail]=../include ../apps/include
+  DEPEND[property-memfail]=../libcrypto.a
 
   SOURCE[ssl_handshake_rtt_test]=ssl_handshake_rtt_test.c helpers/ssltestlib.c
   INCLUDE[ssl_handshake_rtt_test]=../include ../apps/include ..

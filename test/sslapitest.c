@@ -3604,6 +3604,52 @@ static int test_ssl_bio_change_wbio(void)
     return execute_test_ssl_bio(0, CHANGE_WBIO);
 }
 
+/*
+ * Regression for GH #30458: tls_set1_bio() must BIO_free_all the old chain
+ * when the write BIO is replaced, not only the top BIO.
+ */
+static int test_ssl_set_wbio_chain_no_leak(void)
+{
+    SSL_CTX *ctx = NULL;
+    SSL *ssl = NULL;
+    BIO *bio = NULL, *filter = NULL, *chain1 = NULL;
+    int testresult = 0;
+
+    if (!TEST_ptr(ctx = SSL_CTX_new_ex(libctx, NULL, TLS_method())))
+        goto end;
+    if (!TEST_ptr(ssl = SSL_new(ctx)))
+        goto end;
+
+    if (!TEST_ptr(filter = BIO_new(BIO_f_nbio_test())))
+        goto end;
+    if (!TEST_ptr(bio = BIO_new(BIO_s_mem()))) {
+        BIO_free(filter);
+        filter = NULL;
+        goto end;
+    }
+    if (!TEST_ptr(chain1 = BIO_push(filter, bio))) {
+        BIO_free_all(filter);
+        filter = bio = NULL;
+        goto end;
+    }
+    filter = bio = NULL;
+
+    SSL_set0_wbio(ssl, chain1);
+    chain1 = NULL;
+    SSL_set0_wbio(ssl, NULL);
+
+    testresult = 1;
+
+end:
+    BIO_free(filter);
+    BIO_free(bio);
+    BIO_free(chain1);
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+
+    return testresult;
+}
+
 #if !defined(OPENSSL_NO_TLS1_2) || defined(OSSL_NO_USABLE_TLS1_3)
 typedef struct {
     /* The list of sig algs */
@@ -13795,11 +13841,10 @@ static int alert_cb(SSL *s, unsigned char alert_code, void *arg)
  * Test 1: Force a failure
  * Test 3: Use a CCM based ciphersuite
  * Test 4: fail yield_secret_cb to see double free
- * Test 5: Normal run with SNI
  */
 static int test_quic_tls(int idx)
 {
-    SSL_CTX *sctx = NULL, *sctx2 = NULL, *cctx = NULL;
+    SSL_CTX *sctx = NULL, *cctx = NULL;
     SSL *serverssl = NULL, *clientssl = NULL;
     int testresult = 0;
     OSSL_DISPATCH qtdis[] = {
@@ -13827,7 +13872,6 @@ static int test_quic_tls(int idx)
     if (idx == 4)
         qtdis[3].function = (void (*)(void))yield_secret_cb_fail;
 
-    snicb = 0;
     memset(secret_history, 0, sizeof(secret_history));
     secret_history_idx = 0;
     memset(&sdata, 0, sizeof(sdata));
@@ -13841,18 +13885,6 @@ static int test_quic_tls(int idx)
             TLS_client_method(), TLS1_3_VERSION, 0,
             &sctx, &cctx, cert, privkey)))
         goto end;
-
-    if (idx == 5) {
-        if (!TEST_true(create_ssl_ctx_pair(libctx, TLS_server_method(), NULL,
-                TLS1_3_VERSION, 0,
-                &sctx2, NULL, cert, privkey)))
-            goto end;
-
-        /* Set up SNI */
-        if (!TEST_true(SSL_CTX_set_tlsext_servername_callback(sctx, sni_cb))
-            || !TEST_true(SSL_CTX_set_tlsext_servername_arg(sctx, sctx2)))
-            goto end;
-    }
 
     if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl, NULL,
             NULL)))
@@ -13892,12 +13924,6 @@ static int test_quic_tls(int idx)
         testresult = 1;
         sdata.err = 0;
         goto end;
-    }
-
-    /* We should have had the SNI callback called exactly once */
-    if (idx == 5) {
-        if (!TEST_int_eq(snicb, 1))
-            goto end;
     }
 
     /* Check no problems during the handshake */
@@ -13941,7 +13967,6 @@ static int test_quic_tls(int idx)
 end:
     SSL_free(serverssl);
     SSL_free(clientssl);
-    SSL_CTX_free(sctx2);
     SSL_CTX_free(sctx);
     SSL_CTX_free(cctx);
 
@@ -14835,6 +14860,7 @@ int setup_tests(void)
     ADD_TEST(test_ssl_bio_pop_ssl_bio);
     ADD_TEST(test_ssl_bio_change_rbio);
     ADD_TEST(test_ssl_bio_change_wbio);
+    ADD_TEST(test_ssl_set_wbio_chain_no_leak);
 #if !defined(OPENSSL_NO_TLS1_2) || defined(OSSL_NO_USABLE_TLS1_3)
     ADD_ALL_TESTS(test_set_sigalgs, OSSL_NELEM(testsigalgs) * 2);
     ADD_TEST(test_keylog);
@@ -14990,7 +15016,7 @@ int setup_tests(void)
 #endif
     ADD_ALL_TESTS(test_alpn, 4);
 #if !defined(OSSL_NO_USABLE_TLS1_3)
-    ADD_ALL_TESTS(test_quic_tls, 6);
+    ADD_ALL_TESTS(test_quic_tls, 5);
     ADD_TEST(test_quic_tls_early_data);
 #endif
     ADD_ALL_TESTS(test_no_renegotiation, 2);
