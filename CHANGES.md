@@ -45,6 +45,17 @@ OpenSSL Releases
 
    *Craig Lorentzen*
 
+ * Do not issue TLS1.3 session tickets if the server has explicitly disabled
+   them via `SSL_OP_NO_TICKET` and also turned off the session cache with
+   `SSL_SESS_CACHE_OFF`. Both conditions together indicate a clear intent to
+   suppress resumption, so sending NewSessionTicket messages would be wasteful
+   and misleading. TLS1.3 client that does not send the `psk_key_exchange_modes`
+   extension, or that sends it together with [RFC 9149] parameters such as
+   `new_session_count = 0` or `resumption_count = 0`, is effectively signaling
+   no interest in session tickets and session resumption.
+
+   *Daniel Kubec*
+
  * Added test framework for testing function memory allocation failures.
 
    *Jakub Zelenka*
@@ -54,14 +65,14 @@ OpenSSL Releases
 
    *Tong Li*
 
- *  Header files in OpenSSL are being changed to reflect modern development
-    practices - Include files should all be guarded for inclusion by a define
-    and must be self contained, meaning they include all dependencies they need
-    to compile on their own. Headers have been changed to include guards and
-    to include the dependencies they require.  Doing this will help the
-    future use of more modern tooling.
+ * Header files in OpenSSL are being changed to reflect modern development
+   practices - Include files should all be guarded for inclusion by a define
+   and must be self contained, meaning they include all dependencies they need
+   to compile on their own. Headers have been changed to include guards and
+   to include the dependencies they require.  Doing this will help the
+   future use of more modern tooling.
 
-    *Bob Beck*
+   *Bob Beck*
 
  * `EVP_CIPHER_CTX_get_num()` and `EVP_CIPHER_CTX_set_num()' have been deprecated.
 
@@ -95,6 +106,12 @@ OpenSSL Releases
    have been deprecated. Applications should migrate to setting a reference identifier
    to check using 'X509_VERIFY_PARAM_set1_host()', 'X509_VERIFY_PARAM_set1_email()', or
    X509_VERIFY_PARAM_set1_ip_asc()', and using 'X509_verify_cert()'.
+
+   *Bob Beck*
+
+ * The API function `ASN1_STRING_new_not_owned` has been added to the
+   libcrypto. It provides the ability to construct an ASN1_STRING with data
+   for which ownership is not taken by the created ASN1_STRING object.
 
    *Bob Beck*
 
@@ -23062,6 +23079,7 @@ ndif
 [RFC 7919]: https://datatracker.ietf.org/doc/html/rfc7919
 [RFC 8422]: https://datatracker.ietf.org/doc/html/rfc8422
 [RFC 8998]: https://datatracker.ietf.org/doc/html/rfc8998#name-iana-considerations
+[RFC 9149]: https://datatracker.ietf.org/doc/html/rfc9149
 [RFC 9849]: https://datatracker.ietf.org/doc/html/rfc9849
 [SP 800-132]: https://csrc.nist.gov/pubs/sp/800/132/final
 [SP 800-185]: https://csrc.nist.gov/pubs/sp/800/185/final

@@ -2322,6 +2322,29 @@ out:
     return ret;
 }
 
+#ifndef OPENSSL_NO_POLY1305
+/* Test that EVP_MAC_final fails for Poly1305 when no key was set */
+static int test_evp_mac_poly1305_no_key(void)
+{
+    int ret = 0;
+    EVP_MAC *mac = NULL;
+    EVP_MAC_CTX *ctx = NULL;
+    unsigned char out[16];
+    size_t outl = 0;
+
+    if (!TEST_ptr(mac = EVP_MAC_fetch(testctx, "Poly1305", testpropq))
+        || !TEST_ptr(ctx = EVP_MAC_CTX_new(mac))
+        || !TEST_int_eq(EVP_MAC_init(ctx, NULL, 0, NULL), 1)
+        || !TEST_int_eq(EVP_MAC_final(ctx, out, &outl, sizeof(out)), 0))
+        goto err;
+    ret = 1;
+err:
+    EVP_MAC_CTX_free(ctx);
+    EVP_MAC_free(mac);
+    return ret;
+}
+#endif
+
 static int test_d2i_AutoPrivateKey(int i)
 {
     int ret = 0;
@@ -4033,6 +4056,85 @@ err:
     EVP_PKEY_free(key);
     EVP_PKEY_CTX_free(key_ctx);
 
+    return ret;
+}
+
+static int test_RSA_verify_recover_rejects_short_buffer(void)
+{
+    int ret = 0;
+    int recovered_cap = 0;
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *sign_ctx = NULL, *verify_ctx = NULL;
+    unsigned char *sig = NULL, *recovered = NULL;
+    size_t sig_len = 0, recovered_len = 0;
+    unsigned long err = 0;
+    unsigned char shortbuf[] = { 0xa5, 0x5a };
+    const unsigned char shortbuf_expected[] = { 0xa5, 0x5a };
+    unsigned char digest[32];
+    size_t i;
+
+    for (i = 0; i < sizeof(digest); i++)
+        digest[i] = (unsigned char)i;
+
+    if (OSSL_PROVIDER_available(testctx, "fips"))
+        return TEST_skip("Test skipped for FIPS provider");
+
+    if (!TEST_ptr(pkey = load_example_rsa_key())
+        || !TEST_ptr(sign_ctx = EVP_PKEY_CTX_new_from_pkey(testctx, pkey, NULL))
+        || !TEST_int_gt(EVP_PKEY_sign_init(sign_ctx), 0)
+        || !TEST_int_gt(EVP_PKEY_CTX_set_rsa_padding(sign_ctx,
+                            RSA_PKCS1_PADDING),
+            0)
+        || !TEST_int_gt(EVP_PKEY_CTX_set_signature_md(sign_ctx, EVP_sha256()),
+            0)
+        || !TEST_int_gt(EVP_PKEY_sign(sign_ctx, NULL, &sig_len, digest,
+                            sizeof(digest)),
+            0)
+        || !TEST_ptr(sig = OPENSSL_malloc(sig_len))
+        || !TEST_int_gt(EVP_PKEY_sign(sign_ctx, sig, &sig_len, digest,
+                            sizeof(digest)),
+            0)
+        || !TEST_int_gt(recovered_cap = EVP_PKEY_get_size(pkey), 0)
+        || !TEST_ptr(recovered = OPENSSL_malloc(recovered_cap))
+        || !TEST_ptr(verify_ctx = EVP_PKEY_CTX_new_from_pkey(testctx, pkey,
+                         NULL))
+        || !TEST_int_gt(EVP_PKEY_verify_recover_init(verify_ctx), 0)
+        || !TEST_int_gt(EVP_PKEY_CTX_set_rsa_padding(verify_ctx,
+                            RSA_PKCS1_PADDING),
+            0)
+        || !TEST_int_gt(EVP_PKEY_CTX_set_signature_md(verify_ctx, EVP_sha256()),
+            0))
+        goto done;
+
+    recovered_len = (size_t)recovered_cap;
+    if (!TEST_int_gt(EVP_PKEY_verify_recover(verify_ctx, recovered,
+                         &recovered_len, sig, sig_len),
+            0)
+        || !TEST_size_t_eq(recovered_len, sizeof(digest))
+        || !TEST_mem_eq(recovered, recovered_len, digest, sizeof(digest)))
+        goto done;
+
+    ERR_clear_error();
+    recovered_len = 1;
+    if (!TEST_int_le(EVP_PKEY_verify_recover(verify_ctx, shortbuf,
+                         &recovered_len, sig, sig_len),
+            0))
+        goto done;
+
+    err = ERR_peek_error();
+    if (!TEST_int_eq(ERR_GET_LIB(err), ERR_LIB_PROV)
+        || !TEST_int_eq(ERR_GET_REASON(err), PROV_R_OUTPUT_BUFFER_TOO_SMALL)
+        || !TEST_mem_eq(shortbuf, sizeof(shortbuf), shortbuf_expected,
+            sizeof(shortbuf_expected)))
+        goto done;
+
+    ret = 1;
+done:
+    EVP_PKEY_CTX_free(sign_ctx);
+    EVP_PKEY_CTX_free(verify_ctx);
+    EVP_PKEY_free(pkey);
+    OPENSSL_free(sig);
+    OPENSSL_free(recovered);
     return ret;
 }
 
@@ -7915,6 +8017,9 @@ int setup_tests(void)
 #endif
     ADD_TEST(test_EVP_Digest);
     ADD_TEST(test_EVP_md_null);
+#ifndef OPENSSL_NO_POLY1305
+    ADD_TEST(test_evp_mac_poly1305_no_key);
+#endif
     ADD_ALL_TESTS(test_EVP_PKEY_sign, 3);
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     ADD_ALL_TESTS(test_EVP_PKEY_sign_with_app_method, 2);
@@ -7958,6 +8063,7 @@ int setup_tests(void)
     ADD_TEST(test_RSA_get_set_params);
     ADD_TEST(test_RSA_OAEP_set_get_params);
     ADD_TEST(test_RSA_OAEP_set_null_label);
+    ADD_TEST(test_RSA_verify_recover_rejects_short_buffer);
     ADD_TEST(test_RSA_encrypt);
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     ADD_TEST(test_RSA_legacy);
