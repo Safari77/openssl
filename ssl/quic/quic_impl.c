@@ -4906,7 +4906,7 @@ SSL *ossl_quic_new_from_listener(SSL *ssl, uint64_t flags)
     ossl_quic_channel_set_msg_callback_arg(qc->ch, ql->obj.ssl.ctx->msg_callback_arg);
 
     /*
-     * We deliberately pass NULL for engine and port, because we don't want to
+     * We deliberately pass NULL for engine and port, because we don't want
      * to turn QCSO we create here into an event leader, nor port leader.
      * Both those roles are occupied already by listener (`ssl`) we use
      * to create a new QCSO here.
@@ -5405,6 +5405,11 @@ int ossl_quic_set_peer_token(SSL_CTX *ctx, BIO_ADDR *peer,
         ossl_quic_free_peer_token(old);
     }
     lh_QUIC_TOKEN_insert(c->cache, tok);
+    if (lh_QUIC_TOKEN_error(c->cache)) {
+        ossl_quic_free_peer_token(tok);
+        ossl_crypto_mutex_unlock(c->mutex);
+        return 0;
+    }
 
     ossl_crypto_mutex_unlock(c->mutex);
     return 1;
@@ -5428,9 +5433,8 @@ int ossl_quic_get_peer_token(SSL_CTX *ctx, BIO_ADDR *peer,
 
     ossl_crypto_mutex_lock(c->mutex);
     tok = lh_QUIC_TOKEN_retrieve(c->cache, key);
-    if (tok != NULL) {
+    if (tok != NULL && CRYPTO_UP_REF(&tok->references, &ret)) {
         *token = tok;
-        CRYPTO_UP_REF(&tok->references, &ret);
         rc = 1;
     }
 
@@ -5583,7 +5587,6 @@ long ossl_quic_callback_ctrl(SSL *s, int cmd, void (*fp)(void))
             &ctx.qc->obj.ssl);
         /* This callback also needs to be set on the internal SSL object */
         return ssl3_callback_ctrl(ctx.qc->tls, cmd, fp);
-        ;
 
     default:
         /* Probably a TLS related ctrl. Defer to our internal SSL object */

@@ -7,14 +7,13 @@
  * https://www.openssl.org/source/license.html
  */
 
-#if defined(_WIN32)
-#include <windows.h>
+#include "internal/e_os.h"
+
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x600
 #define USE_RWLOCK
 #endif
-#endif
-#include <assert.h>
 
+#include <assert.h>
 #include <openssl/crypto.h>
 #include <crypto/cryptlib.h>
 #include "internal/common.h"
@@ -443,15 +442,11 @@ CRYPTO_RWLOCK *CRYPTO_THREAD_lock_new(void)
         /* Don't set error, to avoid recursion blowup. */
         return NULL;
 
-#if !defined(_WIN32_WCE)
     /* 0x400 is the spin count value suggested in the documentation */
     if (!InitializeCriticalSectionAndSpinCount(lock, 0x400)) {
         OPENSSL_free(lock);
         return NULL;
     }
-#else
-    InitializeCriticalSection(lock);
-#endif
 #endif
 
     return lock;
@@ -532,6 +527,20 @@ int CRYPTO_THREAD_run_once(CRYPTO_ONCE *once, void (*init)(void))
         result = InterlockedCompareExchange(lock, ONCE_ININIT, ONCE_UNINITED);
         if (result == ONCE_UNINITED) {
             init();
+            /*
+             * On weakly ordered systems, it may happen that the write to *lock
+             * below completes prior to some writes in whatever the init()
+             * callback routine above may do.  In this case, other threads
+             * entering here may see unsynchronized data in whatever the init
+             * routine initializes, leading to erroneous behavior.
+             *
+             * We should use InitOnceExecuteOnce here to implement this, but
+             * doing so requires that we modify the definition of the
+             * CRYPTO_ONCE type, which is an ABI breakage.  So instead
+             * just insert a memory barrier here to ensure that any pending
+             * writes are flushed to memory prior to setting ONCE_DONE below
+             */
+            MemoryBarrier();
             *lock = ONCE_DONE;
             return 1;
         }
@@ -767,12 +776,18 @@ int CRYPTO_atomic_store_ptr(void **dst, void **val, CRYPTO_RWLOCK *lock)
     return 1;
 }
 
-int CRYPTO_atomic_cmp_exch_ptr(void **ptr, void **expect, void *desire, CRYPTO_RWLOCK *lock)
+int CRYPTO_atomic_cmp_exch_ptr(void **ptr, void **expect, void *desire, CRYPTO_RWLOCK *lock, int *lock_failed)
 {
-    InterlockedCompareExchangePointer(ptr, desire, *expect);
-    if (*ptr == desire)
+    void *initial;
+
+    if (lock_failed != NULL)
+        lock_failed = 0;
+
+    /* Load the current pointer value */
+    initial = InterlockedCompareExchangePointer(ptr, desire, *expect);
+    if (*expect == initial)
         return 1;
-    *expect = *ptr;
+    *expect = initial;
     return 0;
 }
 

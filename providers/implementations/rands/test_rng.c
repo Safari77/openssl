@@ -170,8 +170,9 @@ static size_t test_rng_nonce(void *vtest, unsigned char *out,
         return 0;
 
     if (t->generate) {
-        for (i = 0; i < min_noncelen; i++)
-            out[i] = gen_byte(t);
+        if (out != NULL)
+            for (i = 0; i < min_noncelen; i++)
+                out[i] = gen_byte(t);
         return min_noncelen;
     }
 
@@ -286,7 +287,7 @@ static int test_rng_enable_locking(void *vtest)
     if (t != NULL && t->lock == NULL) {
         t->lock = CRYPTO_THREAD_lock_new();
         if (t->lock == NULL) {
-            ERR_raise(ERR_LIB_PROV, RAND_R_FAILED_TO_CREATE_LOCK);
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_CREATE_LOCK);
             return 0;
         }
     }

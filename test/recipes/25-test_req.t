@@ -15,7 +15,7 @@ use OpenSSL::Test qw/:DEFAULT srctop_file/;
 
 setup("test_req");
 
-plan tests => 129;
+plan tests => 132;
 
 require_ok(srctop_file('test', 'recipes', 'tconversion.pl'));
 
@@ -321,6 +321,24 @@ subtest "generating certificate requests" => sub {
        "Verifying signature on request");
 };
 
+subtest "modifying the subject of an existing certificate request" => sub {
+    plan tests => 3;
+
+    my $req_in = srctop_file("test", "testreq2.pem");
+    my $req_out = "testreq-modified-subj.pem";
+    my $subj_out = "testreq-modified-subj.txt";
+
+    ok(run(app(["openssl", "req", "-config", srctop_file("test", "test.cnf"),
+                "-in", $req_in, "-subj", "/CN=Modified Subject",
+                "-out", $req_out])),
+       "Modifying subject of certificate request");
+
+    run(app(["openssl", "req", "-in", $req_out, "-noout", "-subject",
+             "-out", $subj_out]));
+    test_file_contains("modified request", $subj_out, "CN=Modified Subject", 1);
+    test_file_contains("modified request", $subj_out, "CN=cn4", 0);
+};
+
 subtest "generating SM2 certificate requests" => sub {
     plan tests => 4;
 
@@ -498,6 +516,55 @@ subtest "generating certificate requests with SLH-DSA" => sub {
                     "-config", srctop_file("test", "test.cnf"),
                     "-in", "csr_slh_dsa_shake128.pem"])),
                     "verifying SLH-DSA-SHAKE-128s csr");
+    }
+};
+
+subtest "generating certificate with -set_serial" => sub {
+    plan tests => 3;
+
+    my $cert = "self-signed_set_serial.pem";
+    ok(run(app(["openssl", "req", "-x509", "-new", "-days", "365",
+                "-config", srctop_file("test", "test.cnf"),
+                "-key", srctop_file("test", "testrsa.pem"),
+                "-set_serial", "12345",
+                "-out", $cert])),
+       "Generating self-signed cert with -set_serial");
+
+    cert_contains($cert, "Serial Number: 12345", 1);
+
+    ok(!run(app(["openssl", "req", "-x509", "-new", "-days", "365",
+                 "-config", srctop_file("test", "test.cnf"),
+                 "-key", srctop_file("test", "testrsa.pem"),
+                 "-set_serial", "12345", "-set_serial", "67890",
+                 "-out", $cert])),
+       "Supplying -set_serial twice fails");
+};
+
+subtest "generating certificate requests with -pkeyopt" => sub {
+    plan tests => 3;
+
+    SKIP: {
+        skip "EC is not supported by this OpenSSL build", 3 if disabled("ec");
+
+        my $key = "testreq-pkeyopt-key.pem";
+        my $req = "testreq-pkeyopt.pem";
+        my $text = "testreq-pkeyopt.txt";
+
+        ok(run(app(["openssl", "req", "-new",
+                    "-config", srctop_file("test", "test.cnf"),
+                    "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-384",
+                    "-nodes", "-keyout", $key, "-out", $req])),
+           "Generating request with -pkeyopt ec_paramgen_curve:P-384");
+
+        run(app(["openssl", "req", "-in", $req, "-noout", "-text",
+                 "-out", $text]));
+        test_file_contains("request", $text, "ASN1 OID: secp384r1", 1);
+
+        ok(!run(app(["openssl", "req", "-new",
+                     "-config", srctop_file("test", "test.cnf"),
+                     "-newkey", "ec", "-pkeyopt", "bogus_opt:1",
+                     "-nodes", "-keyout", $key, "-out", $req])),
+           "Supplying an unknown -pkeyopt fails");
     }
 };
 

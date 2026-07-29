@@ -1477,7 +1477,7 @@ static int txp_should_try_staging(OSSL_QUIC_TX_PACKETISER *txp,
      * This is not a major concern for clients, since if a client has a 1-RTT EL
      * provisioned the server is guaranteed to also have a 1-RTT EL provisioned.
      *
-     * TODO(QUIC FUTURE): Revisit this when when have reached a decision on how
+     * TODO(QUIC FUTURE): Revisit this when we have reached a decision on how
      * best to implement this
      */
     if (*conn_close_enc_level > enc_level
@@ -3144,6 +3144,8 @@ static int txp_pkt_commit(OSSL_QUIC_TX_PACKETISER *txp,
             && probe_info->pto[pn_space] > 0)
             --probe_info->pto[pn_space];
     }
+
+    ossl_quic_fifd_pkt_discard_unreliable(&txp->fifd, tpkt);
 
     return rc;
 }

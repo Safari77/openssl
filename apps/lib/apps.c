@@ -40,6 +40,7 @@
 #include <openssl/ssl.h>
 #include <openssl/core_names.h>
 #include <openssl/encoder.h>
+#include <openssl/decoder.h>
 #include "s_apps.h"
 #include "apps.h"
 
@@ -605,20 +606,46 @@ EVP_PKEY *load_keyparams_suppress(const char *uri, int format, int maybe_stdin,
     int suppress_decode_errors)
 {
     EVP_PKEY *params = NULL;
+    OSSL_DECODER_CTX *dctx = NULL;
+    BIO *file_bio = BIO_new_file(uri, "rb");
+    OSSL_LIB_CTX *libctx = app_get0_libctx();
+    const char *propq = app_get0_propq();
 
     if (desc == NULL)
         desc = "key parameters";
-    (void)load_key_certs_crls(uri, format, maybe_stdin, NULL, desc,
-        suppress_decode_errors,
-        NULL, NULL, &params, NULL, NULL, NULL, NULL, NULL);
-    if (params != NULL && keytype != NULL && !EVP_PKEY_is_a(params, keytype)) {
-        ERR_print_errors(bio_err);
-        BIO_printf(bio_err,
-            "Unable to load %s from %s (unexpected parameters type)\n",
-            desc, uri);
-        EVP_PKEY_free(params);
-        params = NULL;
+    /*
+     * Use the store lookup path for anything that is not DER/ASN1 format
+     * Or if we are unable to opens the uri as a file.
+     */
+    if (format != FORMAT_ASN1 || file_bio == NULL) {
+        (void)load_key_certs_crls(uri, format, maybe_stdin, NULL, desc,
+            suppress_decode_errors,
+            NULL, NULL, &params, NULL, NULL, NULL, NULL, NULL);
+        if (params != NULL && keytype != NULL && !EVP_PKEY_is_a(params, keytype)) {
+            ERR_print_errors(bio_err);
+            BIO_printf(bio_err,
+                "Unable to load %s from %s (unexpected parameters type)\n",
+                desc, uri);
+            EVP_PKEY_free(params);
+            params = NULL;
+        }
+    } else {
+        dctx = OSSL_DECODER_CTX_new_for_pkey(&params, NULL, NULL, keytype,
+            OSSL_KEYMGMT_SELECT_ALL_PARAMETERS,
+            libctx, propq);
+        if (dctx == NULL) {
+            ERR_print_errors(bio_err);
+            BIO_printf(bio_err, "Unable to allocate decoder context\n");
+        } else {
+            if (!OSSL_DECODER_from_bio(dctx, file_bio)) {
+                ERR_print_errors(bio_err);
+                BIO_printf(bio_err, "Unable to decode file %s\n", uri);
+            }
+        }
     }
+
+    BIO_free(file_bio);
+    OSSL_DECODER_CTX_free(dctx);
     return params;
 }
 
@@ -1849,11 +1876,18 @@ CA_DB *load_index(const char *dbfile, DB_ATTR *db_attr)
         goto err;
 
 #ifndef OPENSSL_NO_POSIX_IO
-    BIO_get_fp(in, &dbfp);
-    if (fstat(fileno(dbfp), &dbst) == -1) {
-        ERR_raise_data(ERR_LIB_SYS, errno,
-            "calling fstat(%s)", dbfile);
-        goto err;
+    if (BIO_get_fp(in, &dbfp) > 0 && dbfp != NULL) {
+        if (fstat(fileno(dbfp), &dbst) == -1) {
+            ERR_raise_data(ERR_LIB_SYS, errno,
+                "calling fstat(%s)", dbfile);
+            goto err;
+        }
+    } else {
+        if (stat(dbfile, &dbst) == -1) {
+            ERR_raise_data(ERR_LIB_SYS, errno,
+                "calling stat(%s)", dbfile);
+            goto err;
+        }
     }
 #endif
 
@@ -1883,8 +1917,14 @@ CA_DB *load_index(const char *dbfile, DB_ATTR *db_attr)
     }
 
     retdb->dbfname = OPENSSL_strdup(dbfile);
-    if (retdb->dbfname == NULL)
+    if (retdb->dbfname == NULL) {
+        TXT_DB_free(retdb->db);
+        retdb->db = NULL;
+        OPENSSL_free(retdb);
+        retdb = NULL;
+        ERR_raise_data(ERR_LIB_SYS, errno, "Out of memory while copying filename: %s", dbfile);
         goto err;
+    }
 
 #ifndef OPENSSL_NO_POSIX_IO
     retdb->dbst = dbst;
@@ -2511,7 +2551,6 @@ int check_cert_might_be_valid(BIO *bio, BIO *b_err, X509 *x, const char *checkho
     X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
     X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_IGNORE_CRITICAL);
     X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_ALLOW_PROXY_CERTS);
-    X509_VERIFY_PARAM_set_trust(vpm, X509_TRUST_OK_ANY_EKU);
 
     if (!X509_VERIFY_PARAM_set1_ip_asc(vpm, checkip)) {
         maybe_printf(b_err, "Invalid IP address: %s\n", checkip);
@@ -2793,7 +2832,7 @@ static const char *get_dp_url(DIST_POINT *dp)
     for (i = 0; i < sk_GENERAL_NAME_num(gens); i++) {
         gen = sk_GENERAL_NAME_value(gens, i);
         uri = GENERAL_NAME_get0_value(gen, &gtype);
-        if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6) {
+        if (gtype == GEN_URI && ASN1_STRING_length_ex(uri) > 6) {
             const char *uptr = (const char *)ASN1_STRING_get0_data(uri);
 
             if (IS_HTTP(uptr)) /* can/should not use HTTPS here */
@@ -2868,6 +2907,34 @@ void store_setup_crl_download(X509_STORE *st)
     X509_STORE_set_lookup_crls_cb(st, crls_http_cb);
 }
 
+int host_is_ip_address(const char *host)
+{
+#ifndef INET6_ADDRSTRLEN /* not defined on OPENSSL_NO_SOCK */
+#define INET6_ADDRSTRLEN 46
+#endif
+    char stripped_host_ipv6[INET6_ADDRSTRLEN + 1];
+    ASN1_OCTET_STRING *str;
+    int ret;
+
+    if (host == NULL)
+        return 0;
+
+    if (host[0] == '[') { /* OSSL_parse_url() returns IPv6 addresses enclosed in [ and ] */
+        size_t len = strlen(++host);
+        if (len == 0 || len > sizeof(stripped_host_ipv6) || host[--len] != ']')
+            return 0;
+        strncpy(stripped_host_ipv6, host, sizeof(stripped_host_ipv6));
+        stripped_host_ipv6[len] = '\0';
+        host = stripped_host_ipv6;
+    }
+    ERR_set_mark();
+    str = a2i_IPADDRESS(host);
+    ret = str != NULL;
+    ERR_pop_to_mark();
+    ASN1_OCTET_STRING_free(str);
+    return ret;
+}
+
 #if !defined(OPENSSL_NO_SOCK) && !defined(OPENSSL_NO_HTTP)
 static const char *tls_error_hint(void)
 {
@@ -2917,15 +2984,12 @@ BIO *app_http_tls_cb(BIO *bio, void *arg, int connect, int detail)
 {
     APP_HTTP_TLS_INFO *info = (APP_HTTP_TLS_INFO *)arg;
     SSL_CTX *ssl_ctx = info->ssl_ctx;
+    BIO *sbio = NULL;
 
     if (ssl_ctx == NULL) /* not using TLS */
         return bio;
     if (connect) {
         SSL *ssl;
-        BIO *sbio = NULL;
-        X509_STORE *ts = SSL_CTX_get_cert_store(ssl_ctx);
-        X509_VERIFY_PARAM *vpm = X509_STORE_get0_param(ts);
-        char *host = vpm == NULL ? NULL : X509_VERIFY_PARAM_get0_host(vpm, 0 /* first hostname */);
 
         /* adapt after fixing callback design flaw, see #17088 */
         if ((info->use_proxy
@@ -2935,27 +2999,35 @@ BIO *app_http_tls_cb(BIO *bio, void *arg, int connect, int detail)
             || (sbio = BIO_new(BIO_f_ssl())) == NULL) {
             return NULL;
         }
-        if ((ssl = SSL_new(ssl_ctx)) == NULL) {
-            BIO_free(sbio);
-            return NULL;
-        }
-
-        if (vpm != NULL)
-            SSL_set_tlsext_host_name(ssl, host /* may be NULL */);
+        if ((ssl = SSL_new(ssl_ctx)) == NULL)
+            goto err;
 
         SSL_set_connect_state(ssl);
-        BIO_set_ssl(sbio, ssl, BIO_CLOSE);
+        if (BIO_set_ssl(sbio, ssl, BIO_CLOSE) <= 0) {
+            SSL_free(ssl);
+            goto err;
+        }
+        if (!host_is_ip_address(info->server)) {
+            if (!SSL_set_tlsext_host_name(ssl, info->server)) /* set SNI */
+                goto err;
+        }
 
         bio = BIO_push(sbio, bio);
     } else { /* disconnect from TLS */
         bio = http_tls_shutdown(bio);
     }
     return bio;
+
+err:
+    BIO_free(sbio);
+    return NULL;
 }
 
 void APP_HTTP_TLS_INFO_free(APP_HTTP_TLS_INFO *info)
 {
     if (info != NULL) {
+        OPENSSL_free((char *)info->server);
+        OPENSSL_free((char *)info->port);
         SSL_CTX_free(info->ssl_ctx);
         OPENSSL_free(info);
     }
@@ -3078,14 +3150,10 @@ static int WIN32_rename(const char *from, const char *to)
         if (tfrom == NULL)
             goto err;
         tto = tfrom + flen;
-#if !defined(_WIN32_WCE) || _WIN32_WCE >= 101
         if (!MultiByteToWideChar(CP_ACP, 0, from, (int)flen, (WCHAR *)tfrom, (int)flen))
-#endif
             for (i = 0; i < flen; i++)
                 tfrom[i] = (TCHAR)from[i];
-#if !defined(_WIN32_WCE) || _WIN32_WCE >= 101
         if (!MultiByteToWideChar(CP_ACP, 0, to, (int)tlen, (WCHAR *)tto, (int)tlen))
-#endif
             for (i = 0; i < tlen; i++)
                 tto[i] = (TCHAR)to[i];
     }
@@ -3653,7 +3721,7 @@ int has_stdin_waiting(void)
 int corrupt_signature(ASN1_STRING *signature)
 {
     const unsigned char *valid = ASN1_STRING_get0_data(signature);
-    int length = ASN1_STRING_length(signature);
+    size_t length = ASN1_STRING_length_ex(signature);
     unsigned char *s = OPENSSL_memdup(valid, length);
 
     if (s == NULL)
@@ -3661,7 +3729,7 @@ int corrupt_signature(ASN1_STRING *signature)
 
     s[length - 1] ^= 0x1;
 
-    ASN1_STRING_set0(signature, s, length);
+    ASN1_STRING_set0(signature, s, (int)length);
     return 1;
 }
 

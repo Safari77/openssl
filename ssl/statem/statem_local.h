@@ -269,6 +269,8 @@ __owur int tls_validate_all_contexts(SSL_CONNECTION *s, unsigned int thisctx,
     RAW_EXTENSION *exts);
 __owur int extension_is_relevant(SSL_CONNECTION *s, unsigned int extctx,
     unsigned int thisctx);
+__owur int tls_validate_no_unknown_extensions(SSL_CONNECTION *s,
+    PACKET *packet, unsigned int context);
 __owur int tls_collect_extensions(SSL_CONNECTION *s, PACKET *packet,
     unsigned int context,
     RAW_EXTENSION **res, size_t *len, int init);
@@ -304,9 +306,6 @@ int tls_parse_ctos_srp(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
     X509 *x, size_t chainidx);
 #endif
 int tls_parse_ctos_early_data(SSL_CONNECTION *s, PACKET *pkt,
-    unsigned int context,
-    X509 *x, size_t chainidx);
-int tls_parse_ctos_ec_pt_formats(SSL_CONNECTION *s, PACKET *pkt,
     unsigned int context,
     X509 *x, size_t chainidx);
 int tls_parse_ctos_supported_groups(SSL_CONNECTION *s, PACKET *pkt,
@@ -516,9 +515,6 @@ int tls_parse_stoc_early_data(SSL_CONNECTION *s, PACKET *pkt,
     unsigned int context,
     X509 *x, size_t chainidx);
 int tls_parse_stoc_maxfragmentlen(SSL_CONNECTION *s, PACKET *pkt,
-    unsigned int context,
-    X509 *x, size_t chainidx);
-int tls_parse_stoc_ec_pt_formats(SSL_CONNECTION *s, PACKET *pkt,
     unsigned int context,
     X509 *x, size_t chainidx);
 int tls_parse_stoc_session_ticket(SSL_CONNECTION *s, PACKET *pkt,
