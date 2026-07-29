@@ -179,9 +179,12 @@ int i2d_SSL_SESSION(const SSL_SESSION *in, unsigned char **pp)
     as.peer_rpk = NULL;
     peer_rpk.data = NULL;
     if (in->peer_rpk != NULL) {
+        as.peer_rpk = &peer_rpk;
         peer_rpk.length = i2d_PUBKEY(in->peer_rpk, &peer_rpk.data);
-        if (peer_rpk.length > 0 && peer_rpk.data != NULL)
-            as.peer_rpk = &peer_rpk;
+        if (peer_rpk.length <= 0) {
+            OPENSSL_free(peer_rpk.data);
+            return 0;
+        }
     }
 
     ssl_session_sinit(&as.tlsext_hostname, &tlsext_hostname,
