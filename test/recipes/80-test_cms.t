@@ -56,9 +56,10 @@ my ($no_des, $no_dh, $no_dsa, $no_ec, $no_ec2m, $no_rc2, $no_zlib)
 
 $no_rc2 = 1 if disabled("legacy");
 
-plan tests => 40;
+plan tests => 42;
 
-ok(run(test(["pkcs7_test"])), "test pkcs7");
+ok(run(test(["pkcs7_test", srctop_file("test", "certs", "servercert.pem"),
+             srctop_file("test", "certs", "serverkey.pem")])), "test pkcs7");
 
 unless ($no_fips) {
     my $provconf = srctop_file("test", "fips-and-base.cnf");
@@ -1069,6 +1070,29 @@ subtest "CMS decrypt authEnvelopedData with authenticated attributes\n" => sub {
        "tampered authEnvelopedData leaks no plaintext to -out");
 };
 
+subtest "CMS parse authenticatedData authAttrs and unauthAttrs\n" => sub {
+    plan tests => 3;
+
+    # BouncyCastle authenticatedData (HMAC-SHA256, KEK) carrying both an
+    # authenticated and an unauthenticated attribute. Per RFC 5652 these are
+    # SET OF Attribute, so with the CMS_AuthenticatedData template fixed to use
+    # X509_ATTRIBUTE they are rendered as attributes (object:/set:) rather than
+    # as an X509_ALGOR (algorithm:/parameter:) they were misparsed into before.
+    my $exit = 0;
+    my $dump = join "\n",
+               run(app(["openssl", "cms", @defaultprov, "-cmsout", "-noout",
+                        "-print", "-inform", "PEM",
+                        "-in", catfile($datadir, "authenticated_attrs.pem")]),
+                   capture => 1,
+                   statusvar => $exit);
+
+    is($exit, 0, "parse authenticatedData with attributes");
+    ok($dump =~ /authAttrs:.*?object:.*?1\.3\.6\.1\.4\.1\.5949\.99\.1.*?UTF8STRING:auth-attr-value/s,
+       "authAttrs parsed as SET OF Attribute");
+    ok($dump =~ /unauthAttrs:.*?object:.*?1\.3\.6\.1\.4\.1\.5949\.99\.2.*?UTF8STRING:unauth-attr-value/s,
+       "unauthAttrs parsed as SET OF Attribute");
+};
+
 subtest "CAdES <=> CAdES consistency tests\n" => sub {
     plan tests => (scalar @smime_cms_cades_tests);
 
@@ -1787,3 +1811,79 @@ subtest "PWRI missing keyDerivationAlgorithm regression" => sub {
     });
 };
 
+subtest "sign and verify with multiple keys and -verify_partial" => sub {
+    plan tests => 9;
+
+    my $smrsa2 = catfile($smdir, "smrsa2.pem");
+    my $sig1 = "sig1.cms";
+    my $out1 = "out1.txt";
+    my $sig2 = "sig2.cms";
+    my $out2 = "out2.txt";
+
+    ok(run(app(['openssl', 'cms',
+                @defaultprov,
+                '-sign', '-in', $smcont,
+                '-nodetach',
+                '-signer', $smrsa1,
+                '-out', $sig1, '-outform', 'DER',
+               ])),
+       "sign with first key");
+    ok(run(app(['openssl', 'cms',
+                @defaultprov,
+                '-verify', '-in', $sig1, '-inform', 'DER',
+                '-CAfile', $smrsa1, '-partial_chain',
+                '-verify_partial',
+                '-out', $out1,
+               ])),
+       "verify single signature");
+    is(compare($smcont, $out1), 0, "compare original message with verified message");
+
+    # because the smrsa2 signature cannot be verified, overall verification fails
+    ok(!run(app(['openssl', 'cms',
+                 @defaultprov,
+                 '-verify', '-in', $sig1, '-inform', 'DER',
+                 '-CAfile', $smrsa2, '-partial_chain',
+                 '-verify_partial',
+                 '-out', $out2,
+                ])),
+       "try to verify rsa1 signature with only rsa2");
+
+    ok(run(app(['openssl', 'cms',
+                @defaultprov,
+                '-resign', '-in', $sig1, '-inform', 'DER',
+                '-signer', $smrsa2,
+                '-out', $sig2, '-outform', 'DER',
+               ])),
+       "resign with second key");
+
+    # because the smrsa1 signature can be verified, overall verification succeeds
+    ok(run(app(['openssl', 'cms',
+                @defaultprov,
+                '-verify', '-in', $sig2, '-inform', 'DER',
+                '-CAfile', $smrsa1, '-partial_chain',
+                '-verify_partial',
+                '-out', $out2,
+               ])),
+       "verify two signatures with only rsa1");
+
+    # because the smrsa2 signature can be verified, overall verification succeeds
+    ok(run(app(['openssl', 'cms',
+                @defaultprov,
+                '-verify', '-in', $sig2, '-inform', 'DER',
+                '-CAfile', $smrsa2, '-partial_chain',
+                '-verify_partial',
+                '-out', $out2,
+               ])),
+       "verify two signatures with only rsa2");
+
+    # because both signatures can be verified, overall verification succeeds
+    ok(run(app(['openssl', 'cms',
+                 @defaultprov,
+                 '-verify', '-in', $sig2, '-inform', 'DER',
+                 '-CAfile', $smroot,
+                 '-verify_partial',
+                 '-out', $out2,
+                ])),
+       "verify both signature signatures with root");
+    is(compare($smcont, $out2), 0, "compare original message with verified message");
+};

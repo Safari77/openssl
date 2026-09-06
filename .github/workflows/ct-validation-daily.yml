@@ -54,7 +54,8 @@ on:
         required: false
         type: string
 
-# Keep in sync with openssl-ci-bot's run-name parser.
+# Keep in sync with openssl-ci-bot's run-name parser, and with the Actions statistics
+# collector that attributes CI load by parsing this same string. Both break silently.
 run-name: >-
   ${{ github.event.inputs.pr && format('ci-dispatch pr={0} head={1} check_run_id={2}', github.event.inputs.pr, github.event.inputs.head_sha, github.event.inputs.check_run_id) || github.workflow }}
 
@@ -140,7 +141,12 @@ jobs:
         # - memcmp: test_crypto_memcmp
         # - ML-KEM: test_internal_ml_kem
         # - ML-DSA: test_internal_ml_dsa
+        #
+        # Also covered:
+        # - test_ct_validation_helpers: The Valgrind-based constant-time
+        #   validation helpers from constant_time.h, like CONSTTIME_SECRET and
+        #   CONSTTIME_DECLASSIFY
         run: |
-          make TESTS="test_internal_ml_kem test_internal_ml_dsa test_crypto_memcmp" \
+          make TESTS="test_internal_ml_kem test_internal_ml_dsa test_crypto_memcmp test_ct_validation_helpers" \
                OSSL_VALGRIND_CT=yes \
                test

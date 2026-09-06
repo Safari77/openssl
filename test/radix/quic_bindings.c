@@ -13,6 +13,7 @@
 #include "internal/quic_channel.h"
 #include "internal/quic_ssl.h"
 #include "internal/quic_error.h"
+#include "internal/quic_thread_assist.h"
 
 /*
  * RADIX 6D QUIC Test Framework
@@ -66,8 +67,9 @@ typedef struct radix_process_st {
 
     /* Process-global state. */
     CRYPTO_MUTEX *gm; /* global mutex */
-    LHASH_OF(RADIX_OBJ) *objs; /* protected by gm */
+    LHASH_OF(RADIX_OBJ) *objs;
     BIO *keylog_out; /* protected by gm */
+    uint64_t counter[2]; /* protected by gm */
 
     CRYPTO_MUTEX *time_m;
     OSSL_TIME base_time; /* set once at init, constant thereafter */
@@ -107,7 +109,7 @@ typedef struct radix_thread_st {
 
 DEFINE_STACK_OF(RADIX_THREAD)
 
-/* ssl reference is transferred. name is copied and is required. */
+/* name is copied and is required. Created with no SSL object bound yet. */
 static RADIX_OBJ *RADIX_OBJ_new_empty(const char *name)
 {
     RADIX_OBJ *obj;
@@ -135,6 +137,7 @@ static RADIX_OBJ *RADIX_OBJ_new_empty(const char *name)
     return obj;
 }
 
+/* ssl reference is transferred. name is copied and is required. */
 static RADIX_OBJ *RADIX_OBJ_new(const char *name, SSL *ssl)
 {
     RADIX_OBJ *obj;
@@ -142,8 +145,7 @@ static RADIX_OBJ *RADIX_OBJ_new(const char *name, SSL *ssl)
     if (!TEST_ptr(ssl))
         return NULL;
 
-    obj = RADIX_OBJ_new_empty(name);
-    if (!TEST_ptr(obj))
+    if (!TEST_ptr(obj = RADIX_OBJ_new_empty(name)))
         return NULL;
 
     obj->ssl = ssl;
@@ -386,7 +388,7 @@ static void RADIX_PROCESS_report_thread_results(RADIX_PROCESS *rp, BIO *bio)
                         "Result for child thread with index %zu:\n",
             rp->node_idx, rp->process_idx, rt->thread_idx, rt->thread_idx);
 
-        BIO_snprintf(pfx_buf, sizeof(pfx_buf), "#  -T-%2zu:\t# ", rt->thread_idx);
+        snprintf(pfx_buf, sizeof(pfx_buf), "#  -T-%2zu:\t# ", rt->thread_idx);
         BIO_set_prefix(bio_err, pfx_buf);
 
         l = BIO_get_mem_data(rt->debug_bio, &p);
@@ -437,6 +439,22 @@ static int RADIX_PROCESS_join_all_threads(RADIX_PROCESS *rp, int *testresult)
     return ok;
 }
 
+/*
+ * Free every non-listener object's SSL before cleanup_one() frees any listener.
+ *
+ * A connection's assist thread reads from its network BIO, and for a dgram BIO
+ * pair (see hf_link_dgram_pair) that BIO belongs to the linked listener. Freeing
+ * the connection joins its assist thread (see ossl_quic_free), so doing so first
+ * ensures no assist thread is still reading when the listener BIOs are freed.
+ */
+static void cleanup_nonlistener(RADIX_OBJ *obj)
+{
+    if (obj->ssl != NULL && !SSL_is_listener(obj->ssl)) {
+        SSL_free(obj->ssl);
+        obj->ssl = NULL;
+    }
+}
+
 static void cleanup_one(RADIX_OBJ *obj)
 {
     obj->registered = 0;
@@ -457,6 +475,7 @@ static void RADIX_PROCESS_cleanup(RADIX_PROCESS *rp)
     sk_RADIX_THREAD_free(rp->threads);
     rp->threads = NULL;
 
+    lh_RADIX_OBJ_doall(rp->objs, cleanup_nonlistener);
     lh_RADIX_OBJ_doall(rp->objs, cleanup_one);
     lh_RADIX_OBJ_free(rp->objs);
     rp->objs = NULL;
@@ -712,7 +731,7 @@ static void radix_skip_time(OSSL_TIME t)
 static void per_op_tick_obj(RADIX_OBJ *obj)
 {
     ossl_crypto_mutex_lock(obj->mx);
-    if (obj->active && obj->ssl)
+    if (obj->active && obj->ssl != NULL)
         SSL_handle_events(obj->ssl);
     ossl_crypto_mutex_unlock(obj->mx);
 }
@@ -891,8 +910,6 @@ DEF_FUNC(hf_clear)
     RADIX_THREAD *rt = RT();
     size_t i;
 
-    ossl_crypto_mutex_lock(RP()->gm);
-
     lh_RADIX_OBJ_doall(RP()->objs, cleanup_one);
     lh_RADIX_OBJ_flush(RP()->objs);
 
@@ -901,7 +918,6 @@ DEF_FUNC(hf_clear)
         rt->ssl[i] = NULL;
     }
 
-    ossl_crypto_mutex_unlock(RP()->gm);
     return 1;
 }
 

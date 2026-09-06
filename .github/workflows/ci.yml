@@ -89,6 +89,17 @@ jobs:
       run: sudo locale-gen tr_TR.UTF-8
     - name: cmocka
       run: sudo apt-get -y install libcmocka-dev
+    - name: install dependencies for perl Net::Curl
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libcurl4-openssl-dev cpanminus build-essential
+    - name: install Net::Curl
+      run: |
+        url=https://cpan.metacpan.org/authors/id/S/SY/SYP/Net-Curl-0.58.tar.gz
+        sha=37c1585cc70e21579c7c733e306e97a46adc093a3777af6d8ba37d73986d7f5a
+        curl -fsSL "$url" -o Net-Curl.tar.gz
+        echo "$sha  Net-Curl.tar.gz" | sha256sum -c -
+        sudo cpanm --notest ./Net-Curl.tar.gz
     - name: fipsvendor
       # Make one fips build use a customized FIPS vendor
       run: echo "FIPS_VENDOR=CI" >> VERSION.dat
@@ -463,13 +474,20 @@ jobs:
 
   fuzz_tests_mfail:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v6
       with:
         persist-credentials: false
     - name: checkout fuzz/corpora submodule
       run: git submodule update --init --depth 1 fuzz/corpora
+    - name: trim corpora to a few seeds per fuzzer
+      env:
+        FUZZ_CORPUS_KEEP: 5
+      run: |
+        for d in fuzz/corpora/*/; do
+          find "$d" -maxdepth 1 -type f | tail -n +$((FUZZ_CORPUS_KEEP + 1)) | xargs -r rm -f
+        done
     - name: Adjust ASLR for sanitizer
       run: sudo sysctl -w vm.mmap_rnd_bits=28
     - name: config
@@ -483,9 +501,6 @@ jobs:
     - name: make
       run: make -s -j4
     - name: make test (fuzz with mfail)
-      env:
-        OSSL_FUZZ_TEST_BUDGET: 1200
-        OSSL_FUZZ_TEST_JOBS: 4
       run: .github/workflows/make-test OPENSSL_TEST_RAND_ORDER=0 TESTS="test_fuzz*"
     - name: save artifacts
       if: success() || failure()

@@ -45,7 +45,8 @@ int X509_NAME_get_text_by_OBJ(const X509_NAME *name, const ASN1_OBJECT *obj,
     if (len <= 0)
         return 0;
     i = (data->length > (len - 1)) ? (len - 1) : data->length;
-    memcpy(buf, data->data, i);
+    if (i > 0)
+        memcpy(buf, data->data, i);
     buf[i] = '\0';
     return i;
 }
@@ -335,9 +336,9 @@ int X509_NAME_ENTRY_set_data(X509_NAME_ENTRY *ne, int type,
     if (len < -1)
         return 0;
     if (len == -1)
-        i = ASN1_STRING_set_string(ne->value, (const char *)bytes);
+        i = ASN1_STRING_set1_string(ne->value, (const char *)bytes);
     else
-        i = ASN1_STRING_set_data(ne->value, bytes, (size_t)len);
+        i = ASN1_STRING_set1_data(ne->value, bytes, (size_t)len);
     if (!i)
         return 0;
     if (type != V_ASN1_UNDEF) {

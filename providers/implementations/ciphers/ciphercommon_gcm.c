@@ -470,8 +470,11 @@ static int gcm_cipher_internal(PROV_GCM_CTX *ctx, unsigned char *out,
             ERR_raise(ERR_LIB_PROV, PROV_R_TAG_NOT_SET);
             goto err;
         }
-        if (!hw->cipherfinal(ctx, ctx->buf))
+        if (hw->cipherfinal(ctx, ctx->buf) == 0) {
+            if (ctx->enc == 0)
+                ERR_raise(ERR_LIB_PROV, PROV_R_BAD_DECRYPT);
             goto err;
+        }
         ctx->iv_state = IV_STATE_FINISHED; /* Don't reuse the IV */
         goto finish;
     }
@@ -525,8 +528,9 @@ static int gcm_tls_iv_set_fixed(PROV_GCM_CTX *ctx, unsigned char *iv,
         return 1;
     }
     /* Fixed field must be at least 4 bytes and invocation field at least 8 */
-    if ((len < EVP_GCM_TLS_FIXED_IV_LEN)
-        || (ctx->ivlen - (int)len) < EVP_GCM_TLS_EXPLICIT_IV_LEN)
+    if (len < EVP_GCM_TLS_FIXED_IV_LEN
+        || len > ctx->ivlen
+        || (ctx->ivlen - len) < EVP_GCM_TLS_EXPLICIT_IV_LEN)
         return 0;
     if (len > 0)
         memcpy(ctx->iv, iv, len);

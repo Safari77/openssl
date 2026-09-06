@@ -54,6 +54,21 @@ err:
     return ok;
 }
 
+DEF_FUNC(check_want_read)
+{
+    int ok = 0;
+    SSL *ssl;
+
+    REQUIRE_SSL(ssl);
+    if (!TEST_int_eq(SSL_get_error(ssl, 0), SSL_ERROR_WANT_READ)
+        || !TEST_int_eq(SSL_want(ssl), SSL_READING))
+        goto err;
+
+    ok = 1;
+err:
+    return ok;
+}
+
 /*
  * Multi-stream test
  */
@@ -146,6 +161,20 @@ DEF_SCRIPT(multi_stream, "multi stream test")
      * (see SSL_set_incoming_stream_policy(3ossl) for details).
      */
     OP_FUNC(check_rejected);
+}
+
+/*
+ * Reject an incoming stream before a default stream has been established.
+ */
+DEF_SCRIPT(reject_before_default_stream, "reject before default stream")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+    OP_SET_INCOMING_STREAM_POLICY(C, SSL_INCOMING_STREAM_POLICY_REJECT, 42);
+    OP_WRITE_B(S, "unseen");
+    OP_SLEEP(100);
+    OP_READ_FAIL(C);
+    OP_FUNC(check_want_read);
 }
 
 /*
@@ -630,10 +659,17 @@ static int mutcbk_inject_frames(const QUIC_PKT_HDR *hdrin,
     /*
      * make injection callback a one shot event,
      * callback is invoked for every packet we
-     * want to modify only one packet here.
+     * want to modify only one packet here. Returning 0 tells the QTX the
+     * packet send itself failed (tearing down the connection), so once
+     * we're done mutating we must pass subsequent packets through
+     * unmodified instead.
      */
-    if (mutctx->mutctx_done)
-        return 0;
+    if (mutctx->mutctx_done) {
+        *hdrout = (QUIC_PKT_HDR *)hdrin;
+        *iovecout = iovecin;
+        *numout = numin;
+        return 1;
+    }
 
     mutctx->mutctx_done = 1;
 
@@ -649,7 +685,7 @@ static int mutcbk_inject_frames(const QUIC_PKT_HDR *hdrin,
     grow_allowance -= (hdrin->src_conn_id.id_len < grow_allowance) ? hdrin->src_conn_id.id_len : grow_allowance;
 
     if (grow_allowance == 0) {
-        TEST_info("%s not enough space to inject", __func__);
+        TEST_info("%s not enough space to inject", OPENSSL_FUNC);
         return 0;
     }
     bufsz += grow_allowance;
@@ -660,7 +696,7 @@ static int mutcbk_inject_frames(const QUIC_PKT_HDR *hdrin,
     /* discard const */
     buf = (char *)mutctx->mutctx_iov.buf;
     if (buf == NULL) {
-        TEST_info("%s OPENSSL_malloc() failed", __func__);
+        TEST_info("%s OPENSSL_malloc() failed", OPENSSL_FUNC);
         return 0;
     }
 
@@ -937,6 +973,39 @@ DEF_SCRIPT(check_ctx_cbks, "Check new_pending and client_hello callbacks")
     OP_ACCEPT_CONN_WAIT(L, S, 0);
     OP_SELECT_SSL(0, S);
     OP_FUNC(check_pending);
+}
+
+/*
+ * With client ticking disabled only its assist thread can act, so skipping fake
+ * time past the 30s idle timeout keeps the server up only if the assist thread
+ * keeps sending keepalives.
+ */
+DEF_SCRIPT(check_thread_assisted_idle,
+    "thread-assisted mode keeps an idle connection alive")
+{
+    size_t i;
+
+    OP_NEW_SSL_L_MEM(L);
+    OP_NEW_SSL_C_TA_MEM(C);
+    OP_LINK_DGRAM_PAIR(C, L);
+    OP_LISTEN(L);
+    OP_CONNECT_WAIT(C);
+
+    OP_ACCEPT_CONN_WAIT(L, Sa, 0);
+    OP_ACCEPT_CONN_NONE(L);
+
+    OP_WRITE_B(C, "apple");
+    OP_READ_EXPECT_B(Sa, "apple");
+
+    OP_TICK_DISABLE(C);
+
+    /* Step well below the keepalive interval so due PINGs can be serviced. */
+    for (i = 0; i < 40; ++i) {
+        OP_SKIP_TIME_WAIT(C, 1000);
+        OP_EXPECT_CONNECTED(Sa);
+    }
+
+    OP_TICK_ENABLE(C);
 }
 
 DEF_FUNC(check_stream_reset_5)
@@ -1623,124 +1692,1398 @@ DEF_SCRIPT(script_19, "Key update test - artificially triggered")
     OP_CHECK_KEY_UPDATE_GE(C, 1);
 }
 
-DEF_SCRIPT(script_20, "place holder for multistrem script_20")
+/* 20. Multiple threads accept stream with socket forcibly closed (error test) */
+DEF_SCRIPT(script_20_child_0,
+    "child: accept stream, read, signal ready, wait, expect read failure")
 {
+    OP_ACCEPT_STREAM_WAIT(C, Ca, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_READ_EXPECT_B(Ca, "foo");
+
+    OP_TRIGGER_COUNTER(0);
+    OP_WAIT_COUNTER(1, 1);
+
+    OP_READ_FAIL_WAIT(Ca);
+    OP_EXPECT_SSL_ERR(Ca, SSL_ERROR_SYSCALL);
 }
 
-DEF_SCRIPT(script_21, "place holder for multistrem script_21")
+DEF_SCRIPT(script_20_child_1,
+    "child: accept stream, read, signal ready, wait, expect read failure")
 {
+    OP_ACCEPT_STREAM_WAIT(C, Cb, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_READ_EXPECT_B(Cb, "foo");
+
+    OP_TRIGGER_COUNTER(0);
+    OP_WAIT_COUNTER(1, 1);
+
+    OP_READ_FAIL_WAIT(Cb);
+    OP_EXPECT_SSL_ERR(Cb, SSL_ERROR_SYSCALL);
 }
 
-DEF_SCRIPT(script_22, "place holder for multistrem script_22")
+DEF_SCRIPT(script_20_child_2,
+    "child: accept stream, read, signal ready, wait, expect read failure")
 {
+    OP_ACCEPT_STREAM_WAIT(C, Cc, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_READ_EXPECT_B(Cc, "foo");
+
+    OP_TRIGGER_COUNTER(0);
+    OP_WAIT_COUNTER(1, 1);
+
+    OP_READ_FAIL_WAIT(Cc);
+    OP_EXPECT_SSL_ERR(Cc, SSL_ERROR_SYSCALL);
 }
 
-DEF_SCRIPT(script_23, "place holder for multistrem script_23")
+DEF_SCRIPT(script_20_child_3,
+    "child: accept stream, read, signal ready, wait, expect read failure")
 {
+    OP_ACCEPT_STREAM_WAIT(C, Cd, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_READ_EXPECT_B(Cd, "foo");
+
+    OP_TRIGGER_COUNTER(0);
+    OP_WAIT_COUNTER(1, 1);
+
+    OP_READ_FAIL_WAIT(Cd);
+    OP_EXPECT_SSL_ERR(Cd, SSL_ERROR_SYSCALL);
 }
 
-DEF_SCRIPT(script_24, "place holder for multistrem script_24")
+DEF_SCRIPT(script_20_child_4,
+    "child: accept stream, read, signal ready, wait, expect read failure")
 {
+    OP_ACCEPT_STREAM_WAIT(C, Ce, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_READ_EXPECT_B(Ce, "foo");
+
+    OP_TRIGGER_COUNTER(0);
+    OP_WAIT_COUNTER(1, 1);
+
+    OP_READ_FAIL_WAIT(Ce);
+    OP_EXPECT_SSL_ERR(Ce, SSL_ERROR_SYSCALL);
 }
 
-DEF_SCRIPT(script_25, "place holder for multistrem script_25")
+DEF_SCRIPT(script_20, "Multiple threads accept stream with socket forcibly closed (error test)")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_BIND(Ca);
+    OP_BIND(Cb);
+    OP_BIND(Cc);
+    OP_BIND(Cd);
+    OP_BIND(Ce);
+    OP_BIND(Sa);
+    OP_BIND(Sb);
+    OP_BIND(Sc);
+    OP_BIND(Sd);
+    OP_BIND(Se);
+
+    OP_SPAWN_THREAD(script_20_child_0);
+    OP_SPAWN_THREAD(script_20_child_1);
+    OP_SPAWN_THREAD(script_20_child_2);
+    OP_SPAWN_THREAD(script_20_child_3);
+    OP_SPAWN_THREAD(script_20_child_4);
+
+    OP_NEW_STREAM(S, Sa, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_WRITE_B(Sa, "foo");
+    OP_CONCLUDE(Sa);
+
+    OP_NEW_STREAM(S, Sb, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_WRITE_B(Sb, "foo");
+    OP_CONCLUDE(Sb);
+
+    OP_NEW_STREAM(S, Sc, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_WRITE_B(Sc, "foo");
+    OP_CONCLUDE(Sc);
+
+    OP_NEW_STREAM(S, Sd, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_WRITE_B(Sd, "foo");
+    OP_CONCLUDE(Sd);
+
+    OP_NEW_STREAM(S, Se, OP_F_REPLACE_STREAM /* bidirectional */);
+    OP_WRITE_B(Se, "foo");
+    OP_CONCLUDE(Se);
+
+    OP_WAIT_COUNTER(0, 5);
+
+    OP_CLOSE_SOCKET(C);
+
+    OP_TRIGGER_COUNTER(1);
 }
 
-DEF_SCRIPT(script_26, "place holder for multistrem script_26")
+/* 21. Fault injection - unknown frame in 1-RTT packet */
+static int script_21_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[21];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != fault->word0)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, fault->word1)))
+        goto err;
+
+    switch (fault->word1) {
+    case OSSL_QUIC_FRAME_TYPE_PATH_CHALLENGE:
+    case OSSL_QUIC_FRAME_TYPE_PATH_RESPONSE:
+    case OSSL_QUIC_FRAME_TYPE_RETIRE_CONN_ID:
+        if (!TEST_true(WPACKET_put_bytes_u64(&wpkt, (uint64_t)0)))
+            goto err;
+        break;
+    case OSSL_QUIC_FRAME_TYPE_MAX_DATA:
+    case OSSL_QUIC_FRAME_TYPE_STREAMS_BLOCKED_UNI:
+    case OSSL_QUIC_FRAME_TYPE_STREAMS_BLOCKED_BIDI:
+    case OSSL_QUIC_FRAME_TYPE_MAX_STREAMS_BIDI:
+    case OSSL_QUIC_FRAME_TYPE_MAX_STREAMS_UNI:
+    case OSSL_QUIC_FRAME_TYPE_DATA_BLOCKED:
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0)))
+            goto err;
+        break;
+    case OSSL_QUIC_FRAME_TYPE_STOP_SENDING:
+    case OSSL_QUIC_FRAME_TYPE_MAX_STREAM_DATA:
+    case OSSL_QUIC_FRAME_TYPE_STREAM_DATA_BLOCKED:
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0)))
+            goto err;
+        break;
+    case OSSL_QUIC_FRAME_TYPE_STREAM:
+    case OSSL_QUIC_FRAME_TYPE_RESET_STREAM:
+    case OSSL_QUIC_FRAME_TYPE_CONN_CLOSE_APP:
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0)))
+            goto err;
+        break;
+    case OSSL_QUIC_FRAME_TYPE_NEW_TOKEN:
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)1))
+            || !TEST_true(WPACKET_put_bytes_u8(&wpkt, (uint8_t)0)))
+            goto err;
+        break;
+    case OSSL_QUIC_FRAME_TYPE_NEW_CONN_ID:
+        /* seq number */
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0))
+            /* retire prior to */
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, (uint64_t)0))
+            /* Connection id length, arbitrary at 1 bytes */
+            || !TEST_true(WPACKET_put_bytes_u8(&wpkt, (uint8_t)1))
+            /* The connection id */
+            || !TEST_true(WPACKET_put_bytes_u8(&wpkt, (uint8_t)0))
+            /* 16 bytes total for the stateless reset token */
+            || !TEST_true(WPACKET_memset(&wpkt, 0, 16)))
+            goto err;
+
+        break;
+    }
+
+    if (!TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
 }
 
-DEF_SCRIPT(script_27, "place holder for multistrem script_27")
+DEF_SCRIPT(script_21, "Fault injection - unknown frame in 1-RTT packet")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_21_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(QUIC_PKT_TYPE_1RTT, OSSL_QUIC_VLINT_MAX);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_28, "place holder for multistrem script_28")
+/* 22. Fault injection - non-zero packet header reserved bits */
+static int script_22_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    if (fault->word0 == 0)
+        return 1;
+
+    hdr->reserved = 1;
+    return 1;
 }
 
-DEF_SCRIPT(script_29, "place holder for multistrem script_29")
+DEF_SCRIPT(script_22, "Fault injection - non-zero packet header reserved bits")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_22_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, 0);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_PROTOCOL_VIOLATION, 0, 0);
 }
 
-DEF_SCRIPT(script_30, "place holder for multistrem script_30")
+/* 23. Fault injection - empty NEW_TOKEN */
+static int script_23_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[16];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf, sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, OSSL_QUIC_FRAME_TYPE_NEW_TOKEN))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, 0))
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
 }
 
-DEF_SCRIPT(script_31, "place holder for multistrem script_31")
+DEF_SCRIPT(script_23, "Fault injection - empty NEW_TOKEN")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_23_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, 0);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_32, "place holder for multistrem script_32")
+/* 24. Fault injection - excess value of MAX_STREAMS_BIDI */
+static int script_24_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[16];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf, sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, fault->word1))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, (((uint64_t)1) << 60) + 1))
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
 }
 
-DEF_SCRIPT(script_33, "place holder for multistrem script_33")
+DEF_SCRIPT(script_24, "Fault injection - excess value of MAX_STREAMS_BIDI")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_24_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, OSSL_QUIC_FRAME_TYPE_MAX_STREAMS_BIDI);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_34, "place holder for multistrem script_34")
+/* 25. Fault injection - excess value of MAX_STREAMS_UNI */
+DEF_SCRIPT(script_25, "Fault injection - excess value of MAX_STREAMS_UNI")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_24_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, OSSL_QUIC_FRAME_TYPE_MAX_STREAMS_UNI);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_35, "place holder for multistrem script_35")
+/* 26. Fault injection - excess value of STREAMS_BLOCKED_BIDI */
+DEF_SCRIPT(script_26, "Fault injection - excess value of STREAMS_BLOCKED_BIDI")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_24_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, OSSL_QUIC_FRAME_TYPE_STREAMS_BLOCKED_BIDI);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_LIMIT_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_36, "place holder for multistrem script_36")
+/* 27. Fault injection - excess value of STREAMS_BLOCKED_UNI */
+DEF_SCRIPT(script_27, "Fault injection - excess value of STREAMS_BLOCKED_UNI")
 {
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_24_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, OSSL_QUIC_FRAME_TYPE_STREAMS_BLOCKED_UNI);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_LIMIT_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_37, "place holder for multistrem script_37")
+/* 28. Fault injection - received RESET_STREAM for send-only stream */
+static int inject_stream_frame_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[32];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, fault->word1))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /* stream ID */
+            fault->word0 - 1))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, 123))
+        || (fault->word1 == OSSL_QUIC_FRAME_TYPE_RESET_STREAM
+            && !TEST_true(WPACKET_quic_write_vlint(&wpkt, 5))) /* final size */
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
 }
 
-DEF_SCRIPT(script_38, "place holder for multistrem script_38")
+DEF_SCRIPT(script_28, "Fault injection - received RESET_STREAM for send-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "orange", 6);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "orange", 6);
+
+    OP_NEW_STREAM(C, Cb, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Cb, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sb, 0);
+    OP_READ_EXPECT(Sb, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_UNI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_RESET_STREAM);
+    OP_WRITE(Sa, "fruit", 5);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_39, "place holder for multistrem script_39")
+/* 29. Fault injection - received RESET_STREAM for nonexistent send-only stream */
+DEF_SCRIPT(script_29, "Fault injection - received RESET_STREAM for nonexistent send-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "orange", 6);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "orange", 6);
+
+    OP_NEW_STREAM(C, Cb, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Cb, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sb, 0);
+    OP_READ_EXPECT(Sb, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_UNI_ID(1) + 1, OSSL_QUIC_FRAME_TYPE_RESET_STREAM);
+    OP_WRITE(Sa, "fruit", 5);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_40, "place holder for multistrem script_40")
+/* 30. Fault injection - received STOP_SENDING for receive-only stream */
+DEF_SCRIPT(script_30, "Fault injection - received STOP_SENDING for receive-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(S, Sa, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sa, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(C, Ca, 0);
+    OP_READ_EXPECT(Ca, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(S_UNI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_STOP_SENDING);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_41, "place holder for multistrem script_41")
+/* 31. Fault injection - received STOP_SENDING for nonexistent receive-only stream */
+DEF_SCRIPT(script_31, "Fault injection - received STOP_SENDING for nonexistent receive-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(S, Sa, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sa, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(C, Ca, 0);
+    OP_READ_EXPECT(Ca, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_UNI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_STOP_SENDING);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_42, "place holder for multistrem script_42")
+/* 32. Fault injection - STREAM frame for nonexistent stream */
+static int inject_stream_data_frame_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
 {
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[64];
+    size_t written;
+    uint64_t type = OSSL_QUIC_FRAME_TYPE_STREAM_OFF_LEN, offset, flen, i;
+
+    if (hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    switch (fault->word1) {
+    default:
+        return 0;
+    case 0:
+        return 1;
+    case 1:
+        offset = 0;
+        flen = 0;
+        break;
+    case 2:
+        offset = (((uint64_t)1) << 62) - 1;
+        flen = 5;
+        break;
+    case 3:
+        offset = 1 * 1024 * 1024 * 1024; /* 1G */
+        flen = 5;
+        break;
+    case 4:
+        offset = 0;
+        flen = 1;
+        break;
+    }
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, type))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /* stream ID */
+            fault->word0 - 1))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, offset))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, flen)))
+        goto err;
+
+    for (i = 0; i < flen; ++i)
+        if (!TEST_true(WPACKET_put_bytes_u8(&wpkt, 0x42)))
+            goto err;
+
+    if (!TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
 }
 
-DEF_SCRIPT(script_43, "place holder for multistrem script_43")
+DEF_SCRIPT(script_32, "Fault injection - STREAM frame for nonexistent stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_data_frame_plain);
+
+    OP_NEW_STREAM(S, Sa, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sa, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(C, Ca, 0);
+    OP_READ_EXPECT(Ca, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_UNI_ID(0) + 1, 1);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_44, "place holder for multistrem script_44")
+/* 33. Fault injection - STREAM frame with illegal offset */
+DEF_SCRIPT(script_33, "Fault injection - STREAM frame with illegal offset")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_data_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_BIDI_ID(0) + 1, 2);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_45, "place holder for multistrem script_45")
+DEF_SCRIPT(script_34, "Fault injection - STREAM frame which exceeds FC")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_data_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_BIDI_ID(0) + 1, 3);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FLOW_CONTROL_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_46, "place holder for multistrem script_46")
+/* 35. Fault injection - MAX_STREAM_DATA for receive-only stream */
+DEF_SCRIPT(script_35, "Fault injection - MAX_STREAM_DATA for receive-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(S, Sa, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sa, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(C, Ca, 0);
+    OP_READ_EXPECT(Ca, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(S_UNI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_MAX_STREAM_DATA);
+
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_47, "place holder for multistrem script_47")
+/* 36. Fault injection - MAX_STREAM_DATA for nonexistent stream */
+DEF_SCRIPT(script_36, "Fault injection - MAX_STREAM_DATA for nonexistent stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(S, Sa, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sa, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(C, Ca, 0);
+    OP_READ_EXPECT(Ca, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_BIDI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_MAX_STREAM_DATA);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_48, "place holder for multistrem script_48")
+/* 37. Fault injection - STREAM_DATA_BLOCKED for send-only stream */
+DEF_SCRIPT(script_37, "Fault injection - STREAM_DATA_BLOCKED for send-only stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_NEW_STREAM(S, Sb, SSL_STREAM_FLAG_UNI);
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_UNI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_STREAM_DATA_BLOCKED);
+    OP_WRITE(Sb, "orange", 5);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
 }
 
-DEF_SCRIPT(script_49, "place holder for multistrem script_49")
+/* 38. Fault injection - STREAM_DATA_BLOCKED for non-existent stream */
+DEF_SCRIPT(script_38, "Fault injection - STREAM_DATA_BLOCKED for non-existent stream")
 {
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_stream_frame_plain);
+
+    OP_NEW_STREAM(C, Ca, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(C_BIDI_ID(0) + 1, OSSL_QUIC_FRAME_TYPE_STREAM_DATA_BLOCKED);
+
+    OP_NEW_STREAM(S, Sb, SSL_STREAM_FLAG_UNI);
+    OP_WRITE(Sb, "orange", 5);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_STREAM_STATE_ERROR, 0, 0);
+}
+
+/* 39. Fault injection - NEW_CONN_ID with zero-len CID */
+static int inject_new_conn_id_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
+{
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[64];
+    size_t i, written;
+    uint64_t seq_no = 0, retire_prior_to = 0;
+    QUIC_CONN_ID new_cid = { 0 };
+
+    if (hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    switch (fault->word1) {
+    case 0:
+        return 1;
+    case 1:
+        new_cid.id_len = 0;
+        break;
+    case 2:
+        new_cid.id_len = 21;
+        break;
+    case 3:
+        new_cid.id_len = 1;
+        new_cid.id[0] = 0x55;
+
+        seq_no = 0;
+        retire_prior_to = 1;
+        break;
+    case 4:
+        /* Use our actual CID so we don't break connectivity. */
+        ossl_quic_channel_get_diag_local_cid(fault->ch, &new_cid);
+
+        seq_no = 2;
+        retire_prior_to = 2;
+        break;
+    case 5:
+        /*
+         * Use a bogus CID which will need to be ignored if connectivity is to
+         * be continued.
+         */
+        new_cid.id_len = 8;
+        new_cid.id[0] = 0x55;
+
+        seq_no = 1;
+        retire_prior_to = 1;
+        break;
+    }
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, OSSL_QUIC_FRAME_TYPE_NEW_CONN_ID))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, seq_no)) /* seq no */
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, retire_prior_to)) /* retire prior to */
+        || !TEST_true(WPACKET_put_bytes_u8(&wpkt, new_cid.id_len))) /* len */
+        goto err;
+
+    for (i = 0; i < new_cid.id_len && i < OSSL_NELEM(new_cid.id); ++i)
+        if (!TEST_true(WPACKET_put_bytes_u8(&wpkt, new_cid.id[i])))
+            goto err;
+
+    for (; i < new_cid.id_len; ++i)
+        if (!TEST_true(WPACKET_put_bytes_u8(&wpkt, 0x55)))
+            goto err;
+
+    for (i = 0; i < QUIC_STATELESS_RESET_TOKEN_LEN; ++i)
+        if (!TEST_true(WPACKET_put_bytes_u8(&wpkt, 0x42)))
+            goto err;
+
+    if (!TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
+}
+
+DEF_SCRIPT(script_39, "Fault injection - NEW_CONN_ID with zero-len CID")
+{
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_new_conn_id_plain);
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(0, 1);
+    OP_WRITE(Sa, "orange", 5);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
+}
+
+/* 40. Shutdown flush test */
+static unsigned char script_40_data[1024] = "strawberry";
+
+DEF_SCRIPT(script_40, "Shutdown flush test")
+{
+    size_t i;
+
+    OP_SIMPLE_PAIR_CONN_ND();
+
+    OP_NEW_STREAM(C, Ca, 0 /* bidirectional */);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_INHIBIT_TICK(C, 1);
+    OP_SET_WRITE_BUF_SIZE(Ca, 1024 * 100 * 3);
+
+    for (i = 0; i < 100; ++i)
+        OP_WRITE(Ca, script_40_data, sizeof(script_40_data));
+
+    OP_CONCLUDE(Ca);
+    OP_SHUTDOWN_WAIT(C, 0, 0, NULL); /* disengages tick inhibition */
+
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    for (i = 0; i < 100; ++i)
+        OP_READ_EXPECT(Sa, script_40_data, sizeof(script_40_data));
+
+    OP_EXPECT_FIN(Sa);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, 0, 1, 0);
+    OP_EXPECT_CONN_CLOSE_INFO(S, 0, 1, 1);
+}
+
+/* 41. Fault injection - PATH_CHALLENGE yields PATH_RESPONSE */
+static const uint64_t script_41_path_challenge = UINT64_C(0xbdeb9451169c83aa);
+static uint64_t script_41_valid_responses;
+static uint64_t script_41_bad_responses;
+
+static int script_41_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
+{
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[16];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, fault->word1))
+        || !TEST_true(WPACKET_put_bytes_u64(&wpkt, script_41_path_challenge))
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !TEST_size_t_eq(written, 9)
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    --fault->word0;
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
+}
+
+static void script_41_trace(int write_p, int version, int content_type,
+    const void *buf, size_t len, SSL *ssl, void *arg)
+{
+    uint64_t frame_type, frame_data;
+    int was_minimal;
+    PACKET pkt;
+
+    if (version != OSSL_QUIC1_VERSION
+        || content_type != SSL3_RT_QUIC_FRAME_FULL
+        || len < 1)
+        return;
+
+    if (!TEST_true(PACKET_buf_init(&pkt, buf, len))
+        || !TEST_true(ossl_quic_wire_peek_frame_header(&pkt, &frame_type,
+            &was_minimal))) {
+        ++script_41_bad_responses;
+        return;
+    }
+
+    if (frame_type != OSSL_QUIC_FRAME_TYPE_PATH_RESPONSE)
+        return;
+
+    if (!TEST_true(ossl_quic_wire_decode_frame_path_response(&pkt, &frame_data))
+        || !TEST_uint64_t_eq(frame_data, script_41_path_challenge)) {
+        ++script_41_bad_responses;
+        return;
+    }
+
+    ++script_41_valid_responses;
+}
+
+DEF_FUNC(install_trace_41)
+{
+    int ok = 0;
+    SSL *ssl;
+
+    REQUIRE_SSL(ssl);
+    SSL_set_msg_callback(ssl, script_41_trace);
+
+    ok = 1;
+err:
+    return ok;
+}
+
+DEF_FUNC(check_path_response_41)
+{
+    int ok = 0;
+
+    /* At least one valid challenge/response echo? */
+    if (script_41_valid_responses == 0)
+        F_SPIN_AGAIN();
+
+    /* No failed tests? */
+    if (!TEST_uint64_t_eq(script_41_bad_responses, 0))
+        goto err;
+
+    ok = 1;
+err:
+    return ok;
+}
+
+DEF_SCRIPT(script_41, "Fault injection - PATH_CHALLENGE yields PATH_RESPONSE")
+{
+    OP_SIMPLE_PAIR_CONN();
+
+    OP_WRITE(C, "apple", 5);
+
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+    OP_SET_INJECT_PLAIN(S, script_41_inject_plain);
+    OP_SELECT_SSL(0, S);
+    OP_FUNC(install_trace_41);
+
+    OP_READ_EXPECT(S, "apple", 5);
+
+    OP_SET_INJECT_WORD(1, OSSL_QUIC_FRAME_TYPE_PATH_CHALLENGE);
+
+    OP_WRITE(S, "orange", 6);
+    OP_READ_EXPECT(C, "orange", 6);
+
+    OP_WRITE(C, "strawberry", 10);
+    OP_READ_EXPECT(S, "strawberry", 10);
+
+    OP_FUNC(check_path_response_41);
+}
+
+/* 42. Fault injection - CRYPTO frame with illegal offset */
+static int script_42_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
+{
+    int ok = 0;
+    unsigned char frame_buf[64];
+    size_t written;
+    WPACKET wpkt;
+
+    if (fault->word0 == 0)
+        return 1;
+
+    --fault->word0;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, OSSL_QUIC_FRAME_TYPE_CRYPTO))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, fault->word1))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, 1))
+        || !TEST_true(WPACKET_put_bytes_u8(&wpkt, 0x42))
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
+}
+
+DEF_SCRIPT(script_42, "Fault injection - CRYPTO frame with illegal offset")
+{
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_42_inject_plain);
+
+    OP_NEW_STREAM(C, Ca, 0);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, (((uint64_t)1) << 62) - 1);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
+}
+
+/* 43. Fault injection - CRYPTO frame exceeding FC */
+DEF_SCRIPT(script_43, "Fault injection - CRYPTO frame exceeding FC")
+{
+    OP_SIMPLE_PAIR_CONN_ND();
+    OP_ACCEPT_CONN_WAIT_ND(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_42_inject_plain);
+
+    OP_NEW_STREAM(C, Ca, 0);
+    OP_WRITE(Ca, "apple", 5);
+
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, 0x100000 /* 1 MiB */);
+    OP_WRITE(Sa, "orange", 6);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_CRYPTO_BUFFER_EXCEEDED, 0, 0);
+}
+
+/* 44. Fault injection - PADDING */
+static int script_44_inject_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
+{
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[16];
+    size_t written;
+
+    if (fault->word0 == 0 || hdr->type != QUIC_PKT_TYPE_1RTT)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    if (!TEST_true(ossl_quic_wire_encode_padding(&wpkt, 1))
+        || !TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
+}
+
+DEF_SCRIPT(script_44, "Fault injection - PADDING")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, script_44_inject_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_SET_INJECT_WORD(1, 0);
+
+    OP_WRITE(Sa, "Strawberry", 10);
+    OP_READ_EXPECT(C, "Strawberry", 10);
+}
+
+static uint16_t script_45_ack_count;
+
+/* 45. PING must generate ACK */
+DEF_FUNC(force_ping_45)
+{
+    int ok = 0;
+    SSL *ssl;
+    QUIC_CHANNEL *ch;
+
+    REQUIRE_SSL(ssl);
+    ch = ossl_quic_conn_get_channel(ssl);
+    if (!TEST_ptr(ch))
+        goto err;
+
+    script_45_ack_count = ossl_quic_channel_get_diag_num_rx_ack(ch);
+
+    if (!TEST_true(ossl_quic_channel_ping(ch)))
+        goto err;
+
+    ok = 1;
+err:
+    return ok;
+}
+
+DEF_FUNC(wait_incoming_acks_increased_45)
+{
+    int ok = 0;
+    SSL *ssl;
+    QUIC_CHANNEL *ch;
+    uint16_t count;
+
+    REQUIRE_SSL(ssl);
+    ch = ossl_quic_conn_get_channel(ssl);
+    if (!TEST_ptr(ch))
+        goto err;
+
+    count = ossl_quic_channel_get_diag_num_rx_ack(ch);
+
+    if (count == script_45_ack_count)
+        F_SPIN_AGAIN();
+
+    ok = 1;
+err:
+    return ok;
+}
+
+DEF_SCRIPT(script_45, "PING must generate ACK")
+{
+    size_t i;
+
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    for (i = 0; i < 2; ++i) {
+        OP_SELECT_SSL(0, S);
+        OP_FUNC(force_ping_45);
+        OP_SELECT_SSL(0, S);
+        OP_FUNC(wait_incoming_acks_increased_45);
+    }
+
+    OP_WRITE(Sa, "Strawberry", 10);
+    OP_READ_EXPECT(C, "Strawberry", 10);
+}
+
+static int inject_malformed_ack_plain(RADIX_FAULT *fault, QUIC_PKT_HDR *hdr,
+    unsigned char *buf, size_t len)
+{
+    int ok = 0;
+    WPACKET wpkt;
+    unsigned char frame_buf[16];
+    size_t written;
+    uint64_t type = 0, largest_acked = 0, first_range = 0, range_count = 0;
+    uint64_t agap = 0, alen = 0;
+    uint64_t ect0 = 0, ect1 = 0, ecnce = 0;
+
+    if (fault->word0 == 0)
+        return 1;
+
+    if (!TEST_true(WPACKET_init_static_len(&wpkt, frame_buf,
+            sizeof(frame_buf), 0)))
+        return 0;
+
+    type = OSSL_QUIC_FRAME_TYPE_ACK_WITHOUT_ECN;
+
+    switch (fault->word0) {
+    case 1:
+        largest_acked = 100;
+        first_range = 101;
+        range_count = 0;
+        break;
+    case 2:
+        largest_acked = 100;
+        first_range = 80;
+        /* [20..100]; [0..18]  */
+        range_count = 1;
+        agap = 0;
+        alen = 19;
+        break;
+    case 3:
+        largest_acked = 100;
+        first_range = 80;
+        range_count = 1;
+        agap = 18;
+        alen = 1;
+        break;
+    case 4:
+        type = OSSL_QUIC_FRAME_TYPE_ACK_WITH_ECN;
+        largest_acked = 100;
+        first_range = 1;
+        range_count = 0;
+        break;
+    case 5:
+        type = OSSL_QUIC_FRAME_TYPE_ACK_WITH_ECN;
+        largest_acked = 0;
+        first_range = 0;
+        range_count = 0;
+        ect0 = 0;
+        ect1 = 50;
+        ecnce = 200;
+        break;
+    }
+
+    fault->word0 = 0;
+
+    if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, type))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, largest_acked))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /*ack_delay=*/0))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /*ack_range_count=*/range_count))
+        || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /*first_ack_range=*/first_range)))
+        goto err;
+
+    if (range_count > 0)
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, /*range[0].gap=*/agap))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, /*range[0].len=*/alen)))
+            goto err;
+
+    if (type == OSSL_QUIC_FRAME_TYPE_ACK_WITH_ECN)
+        if (!TEST_true(WPACKET_quic_write_vlint(&wpkt, ect0))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, ect1))
+            || !TEST_true(WPACKET_quic_write_vlint(&wpkt, ecnce)))
+            goto err;
+
+    if (!TEST_true(WPACKET_get_total_written(&wpkt, &written))
+        || !radix_fault_prepend_frame(fault, frame_buf, written))
+        goto err;
+
+    ok = 1;
+err:
+    if (ok)
+        WPACKET_finish(&wpkt);
+    else
+        WPACKET_cleanup(&wpkt);
+    return ok;
+}
+
+/* 46. Fault injection - ACK - malformed initial range */
+DEF_SCRIPT(script_46, "Fault injection - ACK - malformed initial range")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_malformed_ack_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(1, 0);
+    OP_WRITE(Sa, "Strawberry", 10);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
+}
+
+DEF_SCRIPT(script_47, "Fault injection - ACK - malformed subsequent range")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_malformed_ack_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(2, 0);
+    OP_WRITE(Sa, "Strawberry", 10);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
+}
+
+DEF_SCRIPT(script_48, "Fault injection - ACK - malformed subsequent range")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_malformed_ack_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_ENGINE_TICK_DISABLE(S);
+    OP_SET_INJECT_WORD(3, 0);
+    OP_WRITE(Sa, "Strawberry", 10);
+    OP_ENGINE_TICK_ENABLE(S);
+
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_FRAME_ENCODING_ERROR, 0, 0);
+}
+
+DEF_SCRIPT(script_49, "Fault injection - ACK - fictional PN")
+{
+    OP_SIMPLE_PAIR_CONN();
+    OP_ACCEPT_CONN_WAIT(L, S, 0);
+
+    OP_SET_INJECT_PLAIN(S, inject_malformed_ack_plain);
+
+    OP_WRITE(C, "apple", 5);
+    OP_ACCEPT_STREAM_WAIT(S, Sa, 0);
+    OP_READ_EXPECT(Sa, "apple", 5);
+
+    OP_SET_INJECT_WORD(4, 0);
+
+    OP_WRITE(Sa, "Strawberry", 10);
+    /*
+     * The injected ACK acknowledges a packet number we have not sent, which the
+     * peer is expected to treat as a PROTOCOL_VIOLATION, so the connection is
+     * closed rather than the stream data being delivered.
+     */
+    OP_EXPECT_CONN_CLOSE_INFO(C, OSSL_QUIC_ERR_PROTOCOL_VIOLATION, 0, 0);
 }
 
 DEF_SCRIPT(script_50, "place holder for multistrem script_50")
@@ -1978,6 +3321,7 @@ DEF_SCRIPT(script_106, "place holder for multistrem script_106")
 static SCRIPT_INFO *const scripts[] = {
     USE(simple_stream),
     USE(multi_stream),
+    USE(reject_before_default_stream),
     USE(simple_conn),
     USE(simple_thread),
     USE(ssl_poll),
@@ -1985,6 +3329,7 @@ static SCRIPT_INFO *const scripts[] = {
     USE(check_cwm),
     USE(check_pc_flood),
     USE(check_ctx_cbks),
+    USE(check_thread_assisted_idle),
     USE(script_5),
     USE(script_6),
     USE(script_7),
